@@ -7,5 +7,5 @@
     "editor.defaultFormatter": "JohnnyMorganz.stylua",
     "editor.formatOnSave": true
   },
-  "files.eol": "\r\n"
+  "files.eol": "\n"
 }
