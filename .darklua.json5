@@ -1,0 +1,7 @@
+{
+  generator: "retain_lines",
+  bundle: {
+    require_mode: "luau",
+  },
+  rules: [],
+}

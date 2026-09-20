@@ -24,7 +24,10 @@ return function(PascalCaseExplorer: any)
 	end
 
 	local success, failure = pcall(function()
-		assert(hierarchy.Tree:GetCount() == 1, "New hierarchy should initially contain only its root")
+		assert(
+			hierarchy.Tree:GetCount() == 1,
+			"New hierarchy should initially contain only its root"
+		)
 
 		local alpha = Instance.new("Folder")
 		alpha.Name = "Alpha"
@@ -79,7 +82,10 @@ return function(PascalCaseExplorer: any)
 		assert(readdedAlphaId ~= nil, "Re-added Alpha folder was not tracked")
 		assert(readdedChildId ~= nil, "Re-added child part was not tracked")
 		assert(readdedAlphaId ~= alphaId, "Re-entering the hierarchy should allocate a new node ID")
-		assert(readdedChildId ~= childId, "Re-entering a subtree should allocate new descendant IDs")
+		assert(
+			readdedChildId ~= childId,
+			"Re-entering a subtree should allocate new descendant IDs"
+		)
 
 		alpha:Destroy()
 		settle()
@@ -90,7 +96,10 @@ return function(PascalCaseExplorer: any)
 
 		beta:Destroy()
 		settle()
-		assert(hierarchy.Tree:GetCount() == 1, "Only the test root should remain after Beta is destroyed")
+		assert(
+			hierarchy.Tree:GetCount() == 1,
+			"Only the test root should remain after Beta is destroyed"
+		)
 	end)
 
 	disconnect()

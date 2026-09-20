@@ -11,7 +11,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Rokit
         uses: CompeyDev/setup-rokit@v0.1.2
@@ -19,10 +19,10 @@ jobs:
           version: "v1.1.0"
 
       - name: Check formatting
-        run: stylua --check src tests
+        run: stylua --check src tests executor
 
       - name: Lint
-        run: selene src tests
+        run: selene src tests executor
 
       - name: Smoke test
         run: lune run tests/smoke.luau
@@ -32,3 +32,12 @@ jobs:
 
       - name: Roblox integration harness load test
         run: lune run tests/roblox_harness_smoke.luau
+
+      - name: Build executor bundle
+        run: |
+          mkdir -p dist
+          darklua process executor/entry.luau dist/PascalCaseExplorer.luau -c .darklua.json5
+          test -s dist/PascalCaseExplorer.luau
+
+      - name: Executor bundle smoke test
+        run: lune run tests/executor_bundle_smoke.luau

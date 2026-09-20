@@ -8,6 +8,7 @@ The repository is currently in bootstrap stage. The first goal is a clean, testa
 
 The project pins its developer tools with [Rokit](https://github.com/rojo-rbx/rokit):
 
+- Darklua 0.19.0
 - Luau Language Server 1.69.0
 - Lune 0.10.5
 - Selene 0.31.0
@@ -46,8 +47,8 @@ The project pins its developer tools with [Rokit](https://github.com/rojo-rbx/ro
 ## Quality checks
 
 ```powershell
-stylua --check src tests
-selene src tests
+stylua --check src tests executor
+selene src tests executor
 lune run tests/smoke.luau
 lune run tests/tree_store.luau
 lune run tests/roblox_harness_smoke.luau
@@ -56,10 +57,10 @@ lune run tests/roblox_harness_smoke.luau
 To apply formatting:
 
 ```powershell
-stylua src tests
+stylua src tests executor
 ```
 
-## Initial architecture
+## Architecture
 
 ```text
 src/
@@ -72,12 +73,19 @@ src/
 │   └── LiveHierarchy.luau    Keeps the captured tree synchronized
 └── UI/                       Explorer interface (later phase)
 
+executor/
+└── entry.luau                Runtime bootstrap used for the single-file build
+
 tests/
 ├── smoke.luau
 ├── tree_store.luau
 ├── roblox_harness_smoke.luau
+├── executor_bundle_smoke.luau
 └── roblox/
     └── phase1_live_hierarchy.integration.luau
+
+dist/                          Generated locally; ignored by Git
+└── PascalCaseExplorer.luau
 ```
 
 ## Phase 1
@@ -131,17 +139,49 @@ A successful Roblox run prints:
 PascalCase Explorer Phase 1 Roblox integration test passed
 ```
 
-GitHub Actions only verifies that this Roblox-specific harness parses and loads. It cannot execute Roblox's real `Instance` event engine, so the runtime behavior must still be executed in Roblox before Phase 1 is considered platform-verified.
+GitHub Actions verifies that this Roblox-specific harness parses and loads. It cannot execute Roblox's real `Instance` event engine, so the runtime behavior must still be executed in Roblox before Phase 1 is considered platform-verified.
 
-This phase intentionally does not depend on executor-only APIs. An executor eventually loads PascalCase Explorer into the Roblox client; the explorer then observes the replicated Instance hierarchy available to that client. Executor-specific capabilities, if needed, stay behind separate runtime adapters.
+## Executor build/bootstrap
 
-Keep executor-specific APIs isolated under `src/Runtime/`. Core tree/state/search logic should remain ordinary Luau where possible so it can be linted and tested independently.
+Darklua bundles the project and its string-based Luau module requires into one executable Luau file. This keeps the core source modular while giving an executor a single payload.
 
-A single-file runtime build/bundling step is intentionally not selected yet. That decision should be made after the target executor interface is defined instead of coupling the project to one executor prematurely.
+Build it with:
+
+```powershell
+New-Item -ItemType Directory -Force dist | Out-Null
+darklua process executor/entry.luau dist/PascalCaseExplorer.luau -c .darklua.json5
+```
+
+The generated file is:
+
+```text
+dist/PascalCaseExplorer.luau
+```
+
+Run that generated file only in an experience you own or are authorized to test. In Roblox it starts `LiveHierarchy` at `game` and stores the active session at:
+
+```lua
+_G.__PascalCaseExplorerSession
+```
+
+The session exposes:
+
+```lua
+local session = _G.__PascalCaseExplorerSession
+
+print(session.Version)
+print(session.Hierarchy.Tree:GetCount())
+
+session.Stop()
+```
+
+Executing the bundle again attempts to destroy the previous hierarchy first, which prevents duplicate live-event subscriptions during repeated development runs.
+
+No executor-specific API such as `getgenv`, HTTP loading, or a protection bypass is required by this bootstrap. Executor-specific capabilities should be added later only behind isolated adapters when a feature actually requires them.
 
 ## Continuous integration
 
-GitHub Actions checks formatting, linting, the module smoke test, and `TreeStore` behavior on pushes and pull requests.
+GitHub Actions checks formatting, linting, pure-Luau tests, the Roblox integration-harness load, builds the executor bundle, and loads that generated bundle under Lune as a non-Roblox smoke test.
 
 ## Scope
 
