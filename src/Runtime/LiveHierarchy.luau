@@ -263,7 +263,11 @@ function LiveHierarchy.Start(root: Instance): LiveHierarchy
 	table.insert(
 		self._rootConnections,
 		root.DescendantRemoving:Connect(function(object)
-			self:_reconcileObject(object)
+			task.defer(function()
+				if not self._destroyed then
+					self:_reconcileObject(object)
+				end
+			end)
 		end)
 	)
 

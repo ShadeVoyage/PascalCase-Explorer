@@ -50,6 +50,7 @@ stylua --check src tests
 selene src tests
 lune run tests/smoke.luau
 lune run tests/tree_store.luau
+lune run tests/roblox_harness_smoke.luau
 ```
 
 To apply formatting:
@@ -73,7 +74,10 @@ src/
 
 tests/
 ├── smoke.luau
-└── tree_store.luau
+├── tree_store.luau
+├── roblox_harness_smoke.luau
+└── roblox/
+    └── phase1_live_hierarchy.integration.luau
 ```
 
 ## Phase 1
@@ -108,7 +112,26 @@ disconnect()
 hierarchy:Destroy()
 ```
 
-The synchronizer re-checks the Instance's current ancestry when hierarchy events fire instead of assuming an event still represents the object's current state. This matters when Roblox events are deferred or several hierarchy changes happen quickly.
+The synchronizer re-checks the Instance's current ancestry when hierarchy events fire instead of assuming an event still represents the object's current state. Removal reconciliation is deferred by one task turn so `DescendantRemoving` can be validated against the post-change hierarchy state.
+
+### Roblox integration harness
+
+`tests/roblox/phase1_live_hierarchy.integration.luau` is the Phase 1 runtime test. In a real Roblox client it creates an isolated temporary hierarchy and verifies addition, rename, in-root re-parenting, subtree removal, subtree re-entry, destruction, change notifications, and cleanup.
+
+The harness returns a function that accepts the loaded PascalCase Explorer module:
+
+```lua
+local runIntegration = -- load the integration harness in the Roblox test environment
+runIntegration(PascalCaseExplorer)
+```
+
+A successful Roblox run prints:
+
+```text
+PascalCase Explorer Phase 1 Roblox integration test passed
+```
+
+GitHub Actions only verifies that this Roblox-specific harness parses and loads. It cannot execute Roblox's real `Instance` event engine, so the runtime behavior must still be executed in Roblox before Phase 1 is considered platform-verified.
 
 This phase intentionally does not depend on executor-only APIs. An executor eventually loads PascalCase Explorer into the Roblox client; the explorer then observes the replicated Instance hierarchy available to that client. Executor-specific capabilities, if needed, stay behind separate runtime adapters.
 

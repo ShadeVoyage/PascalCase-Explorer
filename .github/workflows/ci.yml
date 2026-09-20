@@ -29,3 +29,6 @@ jobs:
 
       - name: TreeStore tests
         run: lune run tests/tree_store.luau
+
+      - name: Roblox integration harness load test
+        run: lune run tests/roblox_harness_smoke.luau
