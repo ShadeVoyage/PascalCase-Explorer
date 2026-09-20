@@ -415,7 +415,7 @@ function ExplorerWindow._enableDragging(self: Window, titleBar: Frame)
 		titleBar.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 then
 				dragging = true
-				dragStart = input.Position
+				dragStart = Vector2.new(input.Position.X, input.Position.Y)
 				startPosition = self.Main.Position
 			end
 		end)
@@ -437,7 +437,8 @@ function ExplorerWindow._enableDragging(self: Window, titleBar: Frame)
 				return
 			end
 
-			local delta = input.Position - dragStart
+			local currentPosition = Vector2.new(input.Position.X, input.Position.Y)
+			local delta = currentPosition - dragStart
 			self.Main.Position = UDim2.new(
 				startPosition.X.Scale,
 				startPosition.X.Offset + delta.X,
