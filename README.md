@@ -8,7 +8,6 @@ The repository is currently in bootstrap stage. The first goal is a clean, testa
 
 The project pins its developer tools with [Rokit](https://github.com/rojo-rbx/rokit):
 
-- Luau 0.735
 - Luau Language Server 1.69.0
 - Lune 0.10.5
 - Selene 0.31.0
@@ -16,27 +15,33 @@ The project pins its developer tools with [Rokit](https://github.com/rojo-rbx/ro
 
 ## Windows setup
 
-1. Install Git, Visual Studio Code, and Rokit.
-2. Clone the repository:
+1. Install Git and Visual Studio Code.
+2. Install Rokit in PowerShell:
+
+   ```powershell
+   Invoke-RestMethod https://raw.githubusercontent.com/rojo-rbx/rokit/main/scripts/install.ps1 | Invoke-Expression
+   ```
+
+3. Clone the repository:
 
    ```powershell
    git clone https://github.com/ShadeVoyage/PascalCase-Explorer.git
    cd PascalCase-Explorer
    ```
 
-3. Install the pinned toolchain:
+4. Install the pinned project tools:
 
    ```powershell
    rokit install
    ```
 
-4. Open the repository in VS Code:
+5. Open the repository in VS Code:
 
    ```powershell
    code .
    ```
 
-5. Install the recommended VS Code extensions when prompted.
+6. Install the recommended VS Code extensions when prompted.
 
 ## Quality checks
 
@@ -69,6 +74,10 @@ tests/
 Keep executor-specific APIs isolated under `src/Runtime/`. Core tree/state/search logic should remain ordinary Luau where possible so it can be linted and tested independently.
 
 A single-file runtime build/bundling step is intentionally not selected yet. That decision should be made after the target executor interface is defined instead of coupling the project to one executor prematurely.
+
+## Continuous integration
+
+GitHub Actions checks formatting, linting, and the smoke test on pushes and pull requests.
 
 ## Scope
 
