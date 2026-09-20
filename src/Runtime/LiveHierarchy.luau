@@ -5,6 +5,8 @@ local RobloxSnapshot = require("./RobloxSnapshot")
 
 type Store = typeof(TreeStore.new())
 
+local DEFAULT_RECONCILE_BATCH_SIZE = 512
+
 export type ChangeKind = "Added" | "Removed" | "Renamed" | "Moved"
 
 export type Change = {
@@ -20,6 +22,21 @@ export type Change = {
 
 export type ChangeListener = (change: Change) -> ()
 
+export type Options = {
+	ReconcileBatchSize: number?,
+}
+
+export type Stats = {
+	TrackedInstances: number,
+	ConnectionCount: number,
+	PerInstanceConnections: number,
+	ReconcileBatchSize: number,
+	ScanQueueSize: number,
+	ScanCursor: number,
+	CompletedPasses: number,
+	LastPassSeconds: number?,
+}
+
 local LiveHierarchy = {}
 LiveHierarchy.__index = LiveHierarchy
 
@@ -29,11 +46,16 @@ type LiveHierarchyData = {
 	RootId: number,
 	InstanceToId: { [Instance]: number },
 	IdToInstance: { [number]: Instance },
-	_connections: { [Instance]: { RBXScriptConnection } },
-	_rootConnections: { RBXScriptConnection },
+	_connections: { RBXScriptConnection },
 	_listeners: { [number]: ChangeListener },
 	_nextListenerId: number,
 	_destroyed: boolean,
+	_scanIds: { number },
+	_scanCursor: number,
+	_reconcileBatchSize: number,
+	_completedPasses: number,
+	_lastPassSeconds: number?,
+	_passStartedAt: number,
 }
 
 export type LiveHierarchy = typeof(setmetatable({} :: LiveHierarchyData, LiveHierarchy))
@@ -44,44 +66,6 @@ function LiveHierarchy._emit(self: LiveHierarchy, change: Change)
 		if not success then
 			warn("PascalCase Explorer listener failed:", message)
 		end
-	end
-end
-
-function LiveHierarchy._disconnectObject(self: LiveHierarchy, object: Instance)
-	local connections = self._connections[object]
-	if connections == nil then
-		return
-	end
-
-	for _, connection in ipairs(connections) do
-		connection:Disconnect()
-	end
-
-	self._connections[object] = nil
-end
-
-function LiveHierarchy._connectObject(self: LiveHierarchy, object: Instance)
-	if self._destroyed or self._connections[object] ~= nil then
-		return
-	end
-
-	local connections: { RBXScriptConnection } = {}
-	self._connections[object] = connections
-
-	table.insert(
-		connections,
-		object:GetPropertyChangedSignal("Name"):Connect(function()
-			self:_reconcileObject(object)
-		end)
-	)
-
-	if object ~= self.Root then
-		table.insert(
-			connections,
-			object.AncestryChanged:Connect(function()
-				self:_reconcileObject(object)
-			end)
-		)
 	end
 end
 
@@ -112,7 +96,7 @@ function LiveHierarchy._ensureTracked(self: LiveHierarchy, object: Instance): nu
 	local id = self.Tree:AddNode(object.Name, object.ClassName, parentId)
 	self.InstanceToId[object] = id
 	self.IdToInstance[id] = object
-	self:_connectObject(object)
+	table.insert(self._scanIds, id)
 
 	self:_emit({
 		Kind = "Added",
@@ -143,7 +127,6 @@ function LiveHierarchy._untrackSubtree(self: LiveHierarchy, object: Instance)
 	for _, removedId in ipairs(removedIds) do
 		local removedObject = self.IdToInstance[removedId]
 		if removedObject ~= nil then
-			self:_disconnectObject(removedObject)
 			self.InstanceToId[removedObject] = nil
 		end
 
@@ -237,8 +220,63 @@ function LiveHierarchy._trackAddedObject(self: LiveHierarchy, object: Instance)
 	end
 end
 
-function LiveHierarchy.Start(root: Instance): LiveHierarchy
+function LiveHierarchy._finishScanPass(self: LiveHierarchy)
+	self._lastPassSeconds = os.clock() - self._passStartedAt
+	self._completedPasses += 1
+
+	local writeIndex = 1
+	for readIndex = 1, #self._scanIds do
+		local id = self._scanIds[readIndex]
+		if self.IdToInstance[id] ~= nil then
+			self._scanIds[writeIndex] = id
+			writeIndex += 1
+		end
+	end
+
+	for index = #self._scanIds, writeIndex, -1 do
+		table.remove(self._scanIds, index)
+	end
+
+	self._scanCursor = 1
+	self._passStartedAt = os.clock()
+end
+
+function LiveHierarchy._scanStep(self: LiveHierarchy)
+	if self._destroyed then
+		return
+	end
+
+	local processed = 0
+	while processed < self._reconcileBatchSize and self._scanCursor <= #self._scanIds do
+		local id = self._scanIds[self._scanCursor]
+		self._scanCursor += 1
+		processed += 1
+
+		local object = self.IdToInstance[id]
+		if object ~= nil then
+			self:_reconcileObject(object)
+		end
+	end
+
+	if self._scanCursor > #self._scanIds then
+		self:_finishScanPass()
+	end
+end
+
+function LiveHierarchy.Start(root: Instance, options: Options?): LiveHierarchy
 	local snapshot = RobloxSnapshot.Capture(root)
+	local batchSize = DEFAULT_RECONCILE_BATCH_SIZE
+
+	if options ~= nil and options.ReconcileBatchSize ~= nil then
+		batchSize = math.max(1, math.floor(options.ReconcileBatchSize))
+	end
+
+	local scanIds = table.create(snapshot.Tree:GetCount())
+	for id = 1, snapshot.Tree:GetCount() do
+		if snapshot.IdToInstance[id] ~= nil then
+			table.insert(scanIds, id)
+		end
+	end
 
 	local self: LiveHierarchy = setmetatable({
 		Root = root,
@@ -247,21 +285,26 @@ function LiveHierarchy.Start(root: Instance): LiveHierarchy
 		InstanceToId = snapshot.InstanceToId,
 		IdToInstance = snapshot.IdToInstance,
 		_connections = {},
-		_rootConnections = {},
 		_listeners = {},
 		_nextListenerId = 1,
 		_destroyed = false,
+		_scanIds = scanIds,
+		_scanCursor = 1,
+		_reconcileBatchSize = batchSize,
+		_completedPasses = 0,
+		_lastPassSeconds = nil,
+		_passStartedAt = os.clock(),
 	}, LiveHierarchy)
 
 	table.insert(
-		self._rootConnections,
+		self._connections,
 		root.DescendantAdded:Connect(function(object)
 			self:_trackAddedObject(object)
 		end)
 	)
 
 	table.insert(
-		self._rootConnections,
+		self._connections,
 		root.DescendantRemoving:Connect(function(object)
 			task.defer(function()
 				if not self._destroyed then
@@ -271,23 +314,15 @@ function LiveHierarchy.Start(root: Instance): LiveHierarchy
 		end)
 	)
 
-	local capturedObjects: { Instance } = {}
-	for object in pairs(self.InstanceToId) do
-		table.insert(capturedObjects, object)
-	end
-
-	for _, object in ipairs(capturedObjects) do
-		if object == root or object:IsDescendantOf(root) then
-			self:_connectObject(object)
-		else
-			self:_untrackSubtree(object)
-		end
-	end
+	local runService = game:GetService("RunService")
+	table.insert(
+		self._connections,
+		runService.Heartbeat:Connect(function()
+			self:_scanStep()
+		end)
+	)
 
 	self:_reconcileObject(root)
-	for _, descendant in ipairs(root:GetDescendants()) do
-		self:_reconcileObject(descendant)
-	end
 
 	return self
 end
@@ -320,6 +355,30 @@ function LiveHierarchy.GetInstance(self: LiveHierarchy, id: number): Instance?
 	return self.IdToInstance[id]
 end
 
+function LiveHierarchy.RefreshObject(self: LiveHierarchy, object: Instance)
+	self:_reconcileObject(object)
+end
+
+function LiveHierarchy.RefreshId(self: LiveHierarchy, id: number)
+	local object = self.IdToInstance[id]
+	if object ~= nil then
+		self:_reconcileObject(object)
+	end
+end
+
+function LiveHierarchy.GetStats(self: LiveHierarchy): Stats
+	return {
+		TrackedInstances = self.Tree:GetCount(),
+		ConnectionCount = #self._connections,
+		PerInstanceConnections = 0,
+		ReconcileBatchSize = self._reconcileBatchSize,
+		ScanQueueSize = #self._scanIds,
+		ScanCursor = self._scanCursor,
+		CompletedPasses = self._completedPasses,
+		LastPassSeconds = self._lastPassSeconds,
+	}
+end
+
 function LiveHierarchy.IsRunning(self: LiveHierarchy): boolean
 	return not self._destroyed
 end
@@ -331,23 +390,15 @@ function LiveHierarchy.Destroy(self: LiveHierarchy)
 
 	self._destroyed = true
 
-	for _, connection in ipairs(self._rootConnections) do
+	for _, connection in ipairs(self._connections) do
 		connection:Disconnect()
 	end
-	table.clear(self._rootConnections)
-
-	local connectedObjects: { Instance } = {}
-	for object in pairs(self._connections) do
-		table.insert(connectedObjects, object)
-	end
-
-	for _, object in ipairs(connectedObjects) do
-		self:_disconnectObject(object)
-	end
+	table.clear(self._connections)
 
 	table.clear(self._listeners)
 	table.clear(self.InstanceToId)
 	table.clear(self.IdToInstance)
+	table.clear(self._scanIds)
 	self.Tree:Clear()
 end
 

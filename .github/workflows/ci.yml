@@ -38,14 +38,19 @@ jobs:
           mkdir -p dist
           darklua process executor/entry.luau dist/PascalCaseExplorer.luau -c .darklua.json5
           darklua process executor/phase1_test_entry.luau dist/PascalCaseExplorer_Phase1Test.luau -c .darklua.json5
+          darklua process executor/performance_test_entry.luau dist/PascalCaseExplorer_PerformanceTest.luau -c .darklua.json5
           test -s dist/PascalCaseExplorer.luau
           test -s dist/PascalCaseExplorer_Phase1Test.luau
+          test -s dist/PascalCaseExplorer_PerformanceTest.luau
 
       - name: Executor bundle smoke test
         run: lune run tests/executor_bundle_smoke.luau
 
       - name: Phase 1 executor test bundle smoke test
         run: lune run tests/phase1_executor_bundle_smoke.luau
+
+      - name: Performance executor bundle smoke test
+        run: lune run tests/performance_executor_bundle_smoke.luau
 
       - name: Upload ready-to-run executor bundles
         uses: actions/upload-artifact@v7
