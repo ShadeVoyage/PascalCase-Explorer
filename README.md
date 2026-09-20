@@ -17,48 +17,10 @@ The project pins its developer tools with [Rokit](https://github.com/rojo-rbx/ro
 ## Windows setup
 
 1. Install Git and Visual Studio Code.
-2. Install Rokit in PowerShell:
-
-   ```powershell
-   Invoke-RestMethod https://raw.githubusercontent.com/rojo-rbx/rokit/main/scripts/install.ps1 | Invoke-Expression
-   ```
-
-3. Clone the repository:
-
-   ```powershell
-   git clone https://github.com/ShadeVoyage/PascalCase-Explorer.git
-   cd PascalCase-Explorer
-   ```
-
-4. Install the pinned project tools:
-
-   ```powershell
-   rokit install
-   ```
-
-5. Open the repository in VS Code:
-
-   ```powershell
-   code .
-   ```
-
-6. Install the recommended VS Code extensions when prompted.
-
-## Quality checks
-
-```powershell
-stylua --check src tests executor
-selene src tests executor
-lune run tests/smoke.luau
-lune run tests/tree_store.luau
-lune run tests/roblox_harness_smoke.luau
-```
-
-To apply formatting:
-
-```powershell
-stylua src tests executor
-```
+2. Install Rokit in PowerShell.
+3. Clone the repository.
+4. Run `rokit install`.
+5. Open the repository in VS Code.
 
 ## Architecture
 
@@ -67,121 +29,83 @@ src/
 ├── init.luau
 ├── Version.luau
 ├── Core/
-│   └── TreeStore.luau        Pure explorer hierarchy state
+│   └── TreeStore.luau
 ├── Runtime/
-│   ├── RobloxSnapshot.luau   Captures the client-visible Instance tree
-│   └── LiveHierarchy.luau    Keeps the captured tree synchronized
-└── UI/                       Explorer interface (later phase)
+│   ├── RobloxSnapshot.luau
+│   └── LiveHierarchy.luau
+└── UI/
 
 executor/
-└── entry.luau                Runtime bootstrap used for the single-file build
+├── entry.luau
+└── phase1_test_entry.luau
 
 tests/
 ├── smoke.luau
 ├── tree_store.luau
 ├── roblox_harness_smoke.luau
 ├── executor_bundle_smoke.luau
+├── phase1_executor_bundle_smoke.luau
 └── roblox/
     └── phase1_live_hierarchy.integration.luau
 
-dist/                          Generated locally; ignored by Git
-└── PascalCaseExplorer.luau
+dist/
+├── PascalCaseExplorer.luau
+└── PascalCaseExplorer_Phase1Test.luau
 ```
 
 ## Phase 1
 
-Phase 1 implements the explorer's hierarchy data foundation.
+Phase 1 implements the explorer's hierarchy data foundation. `RobloxSnapshot.Capture(root)` walks the client-visible Roblox hierarchy and mirrors it into `TreeStore`. `LiveHierarchy.Start(root)` keeps that mirror synchronized.
 
-`RobloxSnapshot.Capture(root)` walks the Roblox hierarchy visible to the current client and mirrors it into `TreeStore`. `LiveHierarchy.Start(root)` builds on that snapshot and keeps the mirror synchronized with the live Roblox hierarchy.
-
-The live synchronizer handles:
-
-- Instances entering the observed hierarchy
-- Instances leaving the observed hierarchy
-- Instance renames
-- Re-parenting inside the observed hierarchy
-- Subtree removal
-- Instance-to-node and node-to-Instance lookup
-- Change notifications for future UI code
-- Cleanup through `LiveHierarchy:Destroy()`
-
-Example runtime shape:
-
-```lua
-local hierarchy = PascalCaseExplorer.LiveHierarchy.Start(game)
-
-local disconnect = hierarchy:Subscribe(function(change)
-	print(change.Kind, change.Id)
-end)
-
-local workspaceId = hierarchy:GetId(workspace)
-
-disconnect()
-hierarchy:Destroy()
-```
-
-The synchronizer re-checks the Instance's current ancestry when hierarchy events fire instead of assuming an event still represents the object's current state. Removal reconciliation is deferred by one task turn so `DescendantRemoving` can be validated against the post-change hierarchy state.
-
-### Roblox integration harness
-
-`tests/roblox/phase1_live_hierarchy.integration.luau` is the Phase 1 runtime test. In a real Roblox client it creates an isolated temporary hierarchy and verifies addition, rename, in-root re-parenting, subtree removal, subtree re-entry, destruction, change notifications, and cleanup.
-
-The harness returns a function that accepts the loaded PascalCase Explorer module:
-
-```lua
-local runIntegration = -- load the integration harness in the Roblox test environment
-runIntegration(PascalCaseExplorer)
-```
-
-A successful Roblox run prints:
-
-```text
-PascalCase Explorer Phase 1 Roblox integration test passed
-```
-
-GitHub Actions verifies that this Roblox-specific harness parses and loads. It cannot execute Roblox's real `Instance` event engine, so the runtime behavior must still be executed in Roblox before Phase 1 is considered platform-verified.
-
-## Executor build/bootstrap
-
-Darklua bundles the project and its string-based Luau module requires into one executable Luau file. This keeps the core source modular while giving an executor a single payload.
-
-Build it with:
+## Build the executor scripts
 
 ```powershell
+rokit install
 New-Item -ItemType Directory -Force dist | Out-Null
 darklua process executor/entry.luau dist/PascalCaseExplorer.luau -c .darklua.json5
+darklua process executor/phase1_test_entry.luau dist/PascalCaseExplorer_Phase1Test.luau -c .darklua.json5
 ```
 
-The generated file is:
+The normal runtime payload is `dist/PascalCaseExplorer.luau`.
+
+The one-shot Phase 1 verification payload is `dist/PascalCaseExplorer_Phase1Test.luau`.
+
+GitHub Actions also builds both files and publishes them together as the `pascalcase-executor-bundles` workflow artifact for successful CI runs.
+
+## Run the Phase 1 test payload
+
+Use `PascalCaseExplorer_Phase1Test.luau` in an experience you own or are explicitly authorized to test. Paste the complete generated file into the executor's script editor and run it once.
+
+Expected output:
 
 ```text
-dist/PascalCaseExplorer.luau
+[PascalCase Explorer] Running Phase 1 Roblox integration test...
+PascalCase Explorer Phase 1 Roblox integration test passed
+[PascalCase Explorer] PHASE 1 TEST: PASS
 ```
 
-Run that generated file only in an experience you own or are authorized to test. In Roblox it starts `LiveHierarchy` at `game` and stores the active session at:
+If an assertion fails, the payload prints `[PascalCase Explorer] PHASE 1 TEST: FAIL` followed by the specific failed condition.
 
-```lua
-_G.__PascalCaseExplorerSession
-```
+The integration test creates an isolated temporary Folder in Workspace, exercises additions, renames, re-parenting, subtree removal/re-entry, destruction, change notifications, and cleanup, then removes its test objects.
 
-The session exposes:
+## Run the normal runtime payload
+
+`PascalCaseExplorer.luau` starts `LiveHierarchy` at `game` and stores the active development session at `_G.__PascalCaseExplorerSession`.
 
 ```lua
 local session = _G.__PascalCaseExplorerSession
-
 print(session.Version)
 print(session.Hierarchy.Tree:GetCount())
-
 session.Stop()
 ```
 
-Executing the bundle again attempts to destroy the previous hierarchy first, which prevents duplicate live-event subscriptions during repeated development runs.
-
-No executor-specific API such as `getgenv`, HTTP loading, or a protection bypass is required by this bootstrap. Executor-specific capabilities should be added later only behind isolated adapters when a feature actually requires them.
+No executor-specific API such as `getgenv`, HTTP loading, filesystem access, or protection bypass is required by the current bootstrap.
 
 ## Continuous integration
 
-GitHub Actions checks formatting, linting, pure-Luau tests, the Roblox integration-harness load, builds the executor bundle, and loads that generated bundle under Lune as a non-Roblox smoke test.
+GitHub Actions checks formatting, linting, pure-Luau tests, the Roblox test harness load, both Darklua builds, and both generated bundles under Lune. Successful runs upload the ready-to-run bundles as a workflow artifact for 14 days.
+
+GitHub Actions cannot reproduce Roblox's real `Instance` event engine, so the Phase 1 test payload must still be executed in Roblox before Phase 1 is considered platform-verified.
 
 ## Scope
 

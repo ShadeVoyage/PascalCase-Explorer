@@ -33,11 +33,24 @@ jobs:
       - name: Roblox integration harness load test
         run: lune run tests/roblox_harness_smoke.luau
 
-      - name: Build executor bundle
+      - name: Build executor bundles
         run: |
           mkdir -p dist
           darklua process executor/entry.luau dist/PascalCaseExplorer.luau -c .darklua.json5
+          darklua process executor/phase1_test_entry.luau dist/PascalCaseExplorer_Phase1Test.luau -c .darklua.json5
           test -s dist/PascalCaseExplorer.luau
+          test -s dist/PascalCaseExplorer_Phase1Test.luau
 
       - name: Executor bundle smoke test
         run: lune run tests/executor_bundle_smoke.luau
+
+      - name: Phase 1 executor test bundle smoke test
+        run: lune run tests/phase1_executor_bundle_smoke.luau
+
+      - name: Upload ready-to-run executor bundles
+        uses: actions/upload-artifact@v7
+        with:
+          name: pascalcase-executor-bundles
+          path: dist/*.luau
+          if-no-files-found: error
+          retention-days: 14
