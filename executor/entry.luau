@@ -1,4 +1,5 @@
 --!strict
+-- selene: allow(global_usage) -- _G intentionally stores the repeat-run executor session.
 
 local Explorer = require("../src")
 
