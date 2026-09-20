@@ -26,3 +26,6 @@ jobs:
 
       - name: Smoke test
         run: lune run tests/smoke.luau
+
+      - name: TreeStore tests
+        run: lune run tests/tree_store.luau
