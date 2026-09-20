@@ -94,12 +94,7 @@ function ExplorerWindow._setPropertyRows(self: Window, values: { { string } })
 		local key = createLabel(row, pair[1], UDim2.new(0, 110, 1, 0), UDim2.fromOffset(0, 0))
 		key.TextColor3 = Color3.fromRGB(150, 160, 174)
 
-		local value = createLabel(
-			row,
-			pair[2],
-			UDim2.new(1, -118, 1, 0),
-			UDim2.fromOffset(118, 0)
-		)
+		local value = createLabel(row, pair[2], UDim2.new(1, -118, 1, 0), UDim2.fromOffset(118, 0))
 		value.TextWrapped = false
 		value.TextTruncate = Enum.TextTruncate.AtEnd
 
@@ -538,12 +533,8 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 	properties.Position = UDim2.new(0.58, 4, 0, 40)
 	properties.Parent = main
 
-	local propertyHeader = createLabel(
-		properties,
-		"Properties",
-		UDim2.new(1, -16, 0, 26),
-		UDim2.fromOffset(8, 0)
-	)
+	local propertyHeader =
+		createLabel(properties, "Properties", UDim2.new(1, -16, 0, 26), UDim2.fromOffset(8, 0))
 	propertyHeader.Font = Enum.Font.Code
 	propertyHeader.TextColor3 = Color3.fromRGB(235, 238, 243)
 	propertyHeader:SetAttribute("PascalCasePropertyRow", false)
@@ -563,12 +554,8 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 	propertyContent.Size = UDim2.new(1, 0, 1, -34)
 	propertyContent.Parent = properties
 
-	local status = createLabel(
-		main,
-		"Initializing...",
-		UDim2.new(0.58, -12, 0, 24),
-		UDim2.new(0, 8, 1, -28)
-	)
+	local status =
+		createLabel(main, "Initializing...", UDim2.new(0.58, -12, 0, 24), UDim2.new(0, 8, 1, -28))
 	status.TextColor3 = Color3.fromRGB(145, 154, 168)
 	status.TextSize = 12
 
