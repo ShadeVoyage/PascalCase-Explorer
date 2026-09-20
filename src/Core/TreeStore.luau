@@ -86,7 +86,7 @@ function TreeStore.AddNode(
 		table.insert(self._roots, id)
 	else
 		local parent = self._nodes[parentId]
-		assert(parent ~= nil)
+		assert(parent ~= nil, "Validated parent disappeared while adding node")
 		table.insert(parent.Children, id)
 	end
 
@@ -106,7 +106,7 @@ function TreeStore.GetRoots(self: TreeStore): { Node }
 	local result = table.create(#self._roots)
 	for index, id in ipairs(self._roots) do
 		local node = self._nodes[id]
-		assert(node ~= nil)
+		assert(node ~= nil, "Root ID points to a missing node")
 		result[index] = copyNode(node)
 	end
 	return result
@@ -121,7 +121,7 @@ function TreeStore.GetChildren(self: TreeStore, id: number): { Node }
 	local result = table.create(#node.Children)
 	for index, childId in ipairs(node.Children) do
 		local child = self._nodes[childId]
-		assert(child ~= nil)
+		assert(child ~= nil, "Child ID points to a missing node")
 		result[index] = copyNode(child)
 	end
 	return result
@@ -201,7 +201,7 @@ function TreeStore.MoveNode(self: TreeStore, id: number, newParentId: number?)
 		table.insert(self._roots, id)
 	else
 		local newParent = self._nodes[newParentId]
-		assert(newParent ~= nil)
+		assert(newParent ~= nil, "Validated new parent disappeared while moving node")
 		table.insert(newParent.Children, id)
 	end
 end
