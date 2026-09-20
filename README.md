@@ -49,6 +49,7 @@ The project pins its developer tools with [Rokit](https://github.com/rojo-rbx/ro
 stylua --check src tests
 selene src tests
 lune run tests/smoke.luau
+lune run tests/tree_store.luau
 ```
 
 To apply formatting:
@@ -66,7 +67,8 @@ src/
 ├── Core/
 │   └── TreeStore.luau        Pure explorer hierarchy state
 ├── Runtime/
-│   └── RobloxSnapshot.luau   Captures the client-visible Instance tree
+│   ├── RobloxSnapshot.luau   Captures the client-visible Instance tree
+│   └── LiveHierarchy.luau    Keeps the captured tree synchronized
 └── UI/                       Explorer interface (later phase)
 
 tests/
@@ -76,22 +78,39 @@ tests/
 
 ## Phase 1
 
-Phase 1 implements the explorer's data foundation. `RobloxSnapshot.Capture(root)` walks the Roblox hierarchy visible to the current client using ordinary `Instance:GetChildren()` calls and mirrors it into `TreeStore`.
+Phase 1 implements the explorer's hierarchy data foundation.
 
-The core store tracks:
+`RobloxSnapshot.Capture(root)` walks the Roblox hierarchy visible to the current client and mirrors it into `TreeStore`. `LiveHierarchy.Start(root)` builds on that snapshot and keeps the mirror synchronized with the live Roblox hierarchy.
 
-- node ID
-- instance name
-- class name
-- parent ID
-- child IDs
-- renames
-- re-parenting
-- subtree deletion
+The live synchronizer handles:
 
-The Roblox adapter also keeps an `Instance -> node ID` and `node ID -> Instance` mapping. This lets later UI code select an explorer row and recover the real Roblox Instance without putting Roblox objects directly inside the core tree model.
+- Instances entering the observed hierarchy
+- Instances leaving the observed hierarchy
+- Instance renames
+- Re-parenting inside the observed hierarchy
+- Subtree removal
+- Instance-to-node and node-to-Instance lookup
+- Change notifications for future UI code
+- Cleanup through `LiveHierarchy:Destroy()`
 
-This phase intentionally does not depend on executor-only APIs. An executor loads PascalCase Explorer into the Roblox client; the explorer then inspects the same replicated Instance hierarchy that client-side Luau can access. Executor-specific capabilities, if needed, stay behind separate runtime adapters.
+Example runtime shape:
+
+```lua
+local hierarchy = PascalCaseExplorer.LiveHierarchy.Start(game)
+
+local disconnect = hierarchy:Subscribe(function(change)
+	print(change.Kind, change.Id)
+end)
+
+local workspaceId = hierarchy:GetId(workspace)
+
+disconnect()
+hierarchy:Destroy()
+```
+
+The synchronizer re-checks the Instance's current ancestry when hierarchy events fire instead of assuming an event still represents the object's current state. This matters when Roblox events are deferred or several hierarchy changes happen quickly.
+
+This phase intentionally does not depend on executor-only APIs. An executor eventually loads PascalCase Explorer into the Roblox client; the explorer then observes the replicated Instance hierarchy available to that client. Executor-specific capabilities, if needed, stay behind separate runtime adapters.
 
 Keep executor-specific APIs isolated under `src/Runtime/`. Core tree/state/search logic should remain ordinary Luau where possible so it can be linted and tested independently.
 
@@ -99,7 +118,7 @@ A single-file runtime build/bundling step is intentionally not selected yet. Tha
 
 ## Continuous integration
 
-GitHub Actions checks formatting, linting, and the smoke test on pushes and pull requests.
+GitHub Actions checks formatting, linting, the module smoke test, and `TreeStore` behavior on pushes and pull requests.
 
 ## Scope
 
