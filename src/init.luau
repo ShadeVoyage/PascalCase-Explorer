@@ -1,8 +1,8 @@
 --!strict
 
-local Version = require("./Version")
-local TreeStore = require("./Core/TreeStore")
-local RobloxSnapshot = require("./Runtime/RobloxSnapshot")
+local Version = require("@self/Version")
+local TreeStore = require("@self/Core/TreeStore")
+local RobloxSnapshot = require("@self/Runtime/RobloxSnapshot")
 
 local PascalCaseExplorer = {}
 
