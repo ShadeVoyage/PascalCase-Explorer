@@ -27,12 +27,19 @@ assert(stats.ConnectionCount == 3, "Phase 1.5 should use exactly three global co
 
 print(string.format("[PascalCase Explorer] Tracked instances: %d", stats.TrackedInstances))
 print(string.format("[PascalCase Explorer] Global connections: %d", stats.ConnectionCount))
-print(string.format("[PascalCase Explorer] Per-instance connections: %d", stats.PerInstanceConnections))
+print(
+	string.format(
+		"[PascalCase Explorer] Per-instance connections: %d",
+		stats.PerInstanceConnections
+	)
+)
 print(string.format("[PascalCase Explorer] Reconcile batch size: %d", stats.ReconcileBatchSize))
 print(string.format("[PascalCase Explorer] Completed scan passes: %d", stats.CompletedPasses))
 
 if stats.LastPassSeconds ~= nil then
-	print(string.format("[PascalCase Explorer] Last full scan: %.3f seconds", stats.LastPassSeconds))
+	print(
+		string.format("[PascalCase Explorer] Last full scan: %.3f seconds", stats.LastPassSeconds)
+	)
 else
 	warn("[PascalCase Explorer] A full background scan did not finish within the test window")
 end
