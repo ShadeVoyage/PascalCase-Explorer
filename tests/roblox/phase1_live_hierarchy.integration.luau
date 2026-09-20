@@ -38,7 +38,10 @@ return function(PascalCaseExplorer: any)
 
 		local initialStats = hierarchy:GetStats()
 		assert(initialStats.PerInstanceConnections == 0, "Per-Instance signals must stay disabled")
-		assert(initialStats.ConnectionCount == 3, "LiveHierarchy should use only three global signals")
+		assert(
+			initialStats.ConnectionCount == 3,
+			"LiveHierarchy should use only three global signals"
+		)
 
 		local alpha = Instance.new("Folder")
 		alpha.Name = "Alpha"
