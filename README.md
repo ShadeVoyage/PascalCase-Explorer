@@ -61,15 +61,37 @@ stylua src tests
 
 ```text
 src/
-├── init.luau           Project entry module
-├── Version.luau        Project metadata
-├── Core/               Pure Luau state and explorer logic
-├── Runtime/            Roblox/executor capability adapters
-└── UI/                 Explorer interface
+├── init.luau
+├── Version.luau
+├── Core/
+│   └── TreeStore.luau        Pure explorer hierarchy state
+├── Runtime/
+│   └── RobloxSnapshot.luau   Captures the client-visible Instance tree
+└── UI/                       Explorer interface (later phase)
 
 tests/
-└── smoke.luau          Toolchain smoke test
+├── smoke.luau
+└── tree_store.luau
 ```
+
+## Phase 1
+
+Phase 1 implements the explorer's data foundation. `RobloxSnapshot.Capture(root)` walks the Roblox hierarchy visible to the current client using ordinary `Instance:GetChildren()` calls and mirrors it into `TreeStore`.
+
+The core store tracks:
+
+- node ID
+- instance name
+- class name
+- parent ID
+- child IDs
+- renames
+- re-parenting
+- subtree deletion
+
+The Roblox adapter also keeps an `Instance -> node ID` and `node ID -> Instance` mapping. This lets later UI code select an explorer row and recover the real Roblox Instance without putting Roblox objects directly inside the core tree model.
+
+This phase intentionally does not depend on executor-only APIs. An executor loads PascalCase Explorer into the Roblox client; the explorer then inspects the same replicated Instance hierarchy that client-side Luau can access. Executor-specific capabilities, if needed, stay behind separate runtime adapters.
 
 Keep executor-specific APIs isolated under `src/Runtime/`. Core tree/state/search logic should remain ordinary Luau where possible so it can be linted and tested independently.
 
