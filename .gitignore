@@ -1,0 +1,10 @@
+.idea/
+.vscode/*.log
+.DS_Store
+Thumbs.db
+
+# Tool/runtime output
+*.log
+coverage/
+dist/
+build/
