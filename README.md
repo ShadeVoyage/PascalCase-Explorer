@@ -6,7 +6,14 @@ PascalCase Explorer is a client-side Luau runtime explorer intended for debuggin
 
 Phase 1 is platform-verified in Roblox. Phase 1.5 replaced per-Instance hierarchy signals with three global connections plus batched reconciliation. Phase 2 added the virtualized Explorer GUI. Phase 2.1 added navigation and context actions. Phase 2.2 adds deeper property inspection and client-side property editing.
 
+## Phase 2.2 stability hotfix
+
+PascalCase excludes its own `ScreenGui` subtree from `LiveHierarchy`. This prevents the Explorer's property rows and other UI objects from recursively triggering hierarchy rebuilds.
+
+GUI rebuild requests are also coalesced with a short delay while the rebuild lock remains held until rendering finishes. This prevents Roblox's `Maximum re-entrancy depth` failure during heavy client hierarchy activity.
+
 ## Phase 2.2 property inspector
+
 
 The Properties pane now uses a dedicated `PropertyInspector` runtime module instead of hard-coded display rows.
 

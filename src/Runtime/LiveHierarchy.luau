@@ -48,6 +48,7 @@ type LiveHierarchyData = {
 	IdToInstance: { [number]: Instance },
 	_connections: { RBXScriptConnection },
 	_listeners: { [number]: ChangeListener },
+	_ignoredRoots: { [Instance]: boolean },
 	_nextListenerId: number,
 	_destroyed: boolean,
 	_scanIds: { number },
@@ -69,7 +70,22 @@ function LiveHierarchy._emit(self: LiveHierarchy, change: Change)
 	end
 end
 
+function LiveHierarchy._isIgnored(self: LiveHierarchy, object: Instance): boolean
+	for ignoredRoot in pairs(self._ignoredRoots) do
+		if object == ignoredRoot or object:IsDescendantOf(ignoredRoot) then
+			return true
+		end
+	end
+
+	return false
+end
+
 function LiveHierarchy._ensureTracked(self: LiveHierarchy, object: Instance): number?
+	if self:_isIgnored(object) then
+		self:_untrackSubtree(object)
+		return nil
+	end
+
 	local existingId = self.InstanceToId[object]
 	if existingId ~= nil then
 		return existingId
@@ -148,6 +164,11 @@ function LiveHierarchy._reconcileObject(self: LiveHierarchy, object: Instance)
 		return
 	end
 
+	if self:_isIgnored(object) then
+		self:_untrackSubtree(object)
+		return
+	end
+
 	if object ~= self.Root and not object:IsDescendantOf(self.Root) then
 		self:_untrackSubtree(object)
 		return
@@ -208,6 +229,10 @@ function LiveHierarchy._reconcileObject(self: LiveHierarchy, object: Instance)
 end
 
 function LiveHierarchy._trackAddedObject(self: LiveHierarchy, object: Instance)
+	if self:_isIgnored(object) then
+		return
+	end
+
 	local wasTracked = self.InstanceToId[object] ~= nil
 	self:_reconcileObject(object)
 
@@ -286,6 +311,7 @@ function LiveHierarchy.Start(root: Instance, options: Options?): LiveHierarchy
 		IdToInstance = snapshot.IdToInstance,
 		_connections = {},
 		_listeners = {},
+		_ignoredRoots = {},
 		_nextListenerId = 1,
 		_destroyed = false,
 		_scanIds = scanIds,
@@ -355,6 +381,15 @@ function LiveHierarchy.GetInstance(self: LiveHierarchy, id: number): Instance?
 	return self.IdToInstance[id]
 end
 
+function LiveHierarchy.IgnoreSubtree(self: LiveHierarchy, object: Instance)
+	if object == self.Root then
+		error("Cannot ignore the LiveHierarchy root", 2)
+	end
+
+	self._ignoredRoots[object] = true
+	self:_untrackSubtree(object)
+end
+
 function LiveHierarchy.RefreshObject(self: LiveHierarchy, object: Instance)
 	self:_reconcileObject(object)
 end
@@ -396,6 +431,7 @@ function LiveHierarchy.Destroy(self: LiveHierarchy)
 	table.clear(self._connections)
 
 	table.clear(self._listeners)
+	table.clear(self._ignoredRoots)
 	table.clear(self.InstanceToId)
 	table.clear(self.IdToInstance)
 	table.clear(self._scanIds)

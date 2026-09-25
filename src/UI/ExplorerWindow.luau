@@ -7,6 +7,7 @@ local ROW_HEIGHT = 22
 local ROW_POOL_SIZE = 64
 local SEARCH_LIMIT = 500
 local SEARCH_DELAY = 0.15
+local REBUILD_DELAY = 0.03
 local DOUBLE_CLICK_SECONDS = 0.32
 local MIN_WINDOW_WIDTH = 640
 local MIN_WINDOW_HEIGHT = 380
@@ -680,13 +681,14 @@ function ExplorerWindow._scheduleRebuild(self: Window)
 	end
 
 	self._rebuildQueued = true
-	task.defer(function()
+	task.delay(REBUILD_DELAY, function()
 		if self._destroyed then
+			self._rebuildQueued = false
 			return
 		end
 
-		self._rebuildQueued = false
 		self:_rebuildVisible()
+		self._rebuildQueued = false
 	end)
 end
 
@@ -1023,6 +1025,7 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 	screenGui.IgnoreGuiInset = false
 	screenGui.DisplayOrder = 1000
 	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	hierarchy:IgnoreSubtree(screenGui)
 	screenGui.Parent = guiParent
 
 	local main = Instance.new("Frame")

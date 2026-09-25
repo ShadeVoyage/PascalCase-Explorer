@@ -43,6 +43,24 @@ return function(PascalCaseExplorer: any)
 			"LiveHierarchy should use only three global signals"
 		)
 
+		local ignored = Instance.new("Folder")
+		ignored.Name = "IgnoredSubtree"
+		hierarchy:IgnoreSubtree(ignored)
+		ignored.Parent = root
+
+		local ignoredChild = Instance.new("Part")
+		ignoredChild.Name = "IgnoredChild"
+		ignoredChild.Parent = ignored
+
+		task.wait()
+		task.wait()
+
+		assert(hierarchy:GetId(ignored) == nil, "Ignored root must not be tracked")
+		assert(hierarchy:GetId(ignoredChild) == nil, "Ignored descendants must not be tracked")
+		assert(hierarchy.Tree:GetCount() == 1, "Ignored subtree must not change the tree count")
+
+		ignored:Destroy()
+
 		local alpha = Instance.new("Folder")
 		alpha.Name = "Alpha"
 		alpha.Parent = root
