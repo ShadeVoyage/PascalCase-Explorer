@@ -9,7 +9,7 @@ export type AtlasIcon = {
 local LegacyClassIconAtlas = {}
 
 local IMAGE = "rbxasset://textures/ClassImages.png"
-local SIZE = Vector2.new(16, 16)
+local ICON_SIZE = 16
 
 local INDEX: { [string]: number } = {
 	Accessory = 32,
@@ -209,8 +209,8 @@ function LegacyClassIconAtlas.Get(className: string, isService: boolean): AtlasI
 
 	return {
 		Image = IMAGE,
-		ImageRectOffset = Vector2.new(index * 16, 0),
-		ImageRectSize = SIZE,
+		ImageRectOffset = Vector2.new(index * ICON_SIZE, 0),
+		ImageRectSize = Vector2.new(ICON_SIZE, ICON_SIZE),
 	}
 end
 
