@@ -1,9 +1,14 @@
 --!strict
 
+local Clipboard = require("../Runtime/Clipboard")
+
 local ROW_HEIGHT = 22
-local ROW_POOL_SIZE = 48
+local ROW_POOL_SIZE = 64
 local SEARCH_LIMIT = 500
 local SEARCH_DELAY = 0.15
+local DOUBLE_CLICK_SECONDS = 0.32
+local MIN_WINDOW_WIDTH = 640
+local MIN_WINDOW_HEIGHT = 380
 
 local ExplorerWindow = {}
 ExplorerWindow.__index = ExplorerWindow
@@ -22,8 +27,11 @@ type VisibleRow = {
 type RowView = {
 	Frame: Frame,
 	Toggle: TextButton,
+	Icon: TextLabel,
 	Button: TextButton,
 	NodeId: number?,
+	SearchResult: boolean,
+	LastClickAt: number,
 }
 
 type WindowData = {
@@ -33,7 +41,11 @@ type WindowData = {
 	TreeScroll: ScrollingFrame,
 	SearchBox: TextBox,
 	Properties: Frame,
+	PropertyHeader: TextLabel,
 	Status: TextLabel,
+	ContextDismiss: TextButton,
+	ContextMenu: Frame,
+	ContextNodeId: number?,
 	Expanded: { [number]: boolean },
 	VisibleRows: { VisibleRow },
 	Rows: { RowView },
@@ -42,11 +54,39 @@ type WindowData = {
 	_disconnectHierarchy: (() -> ())?,
 	_rebuildQueued: boolean,
 	_searchGeneration: number,
+	_statusGeneration: number,
+	_statusOverride: string?,
 	_destroyed: boolean,
 	_onClose: (() -> ())?,
 }
 
 export type Window = typeof(setmetatable({} :: WindowData, ExplorerWindow))
+
+local CLASS_ICONS: { [string]: string } = {
+	Folder = "F",
+	Model = "M",
+	Part = "P",
+	MeshPart = "P",
+	UnionOperation = "P",
+	LocalScript = "LS",
+	Script = "SC",
+	ModuleScript = "MS",
+	RemoteEvent = "RE",
+	RemoteFunction = "RF",
+	BindableEvent = "BE",
+	BindableFunction = "BF",
+	Sound = "♪",
+	Animation = "A",
+	Camera = "C",
+	Tool = "T",
+	Humanoid = "H",
+	ScreenGui = "UI",
+	Frame = "UI",
+	TextLabel = "UI",
+	TextButton = "UI",
+	ImageLabel = "UI",
+	ImageButton = "UI",
+}
 
 local function createLabel(parent: Instance, text: string, size: UDim2, position: UDim2): TextLabel
 	local label = Instance.new("TextLabel")
@@ -73,6 +113,72 @@ local function getGuiParent(): Instance
 	return player:WaitForChild("PlayerGui")
 end
 
+local function countAttributes(object: Instance): number
+	local count = 0
+	for _ in pairs(object:GetAttributes()) do
+		count += 1
+	end
+	return count
+end
+
+local function makeLuaPath(object: Instance, root: Instance): string
+	if object == root then
+		return "game"
+	end
+
+	local names: { string } = {}
+	local current: Instance? = object
+
+	while current ~= nil and current ~= root do
+		table.insert(names, current.Name)
+		current = current.Parent
+	end
+
+	if current ~= root then
+		return object:GetFullName()
+	end
+
+	local path = "game"
+	for index = #names, 1, -1 do
+		path ..= "[" .. string.format("%q", names[index]) .. "]"
+	end
+
+	return path
+end
+
+local function iconFor(className: string, isRoot: boolean, isService: boolean): (string, Color3)
+	if isRoot then
+		return "G", Color3.fromRGB(242, 190, 74)
+	end
+
+	if isService then
+		return "S", Color3.fromRGB(92, 184, 232)
+	end
+
+	local icon = CLASS_ICONS[className] or "·"
+
+	if className == "LocalScript" or className == "Script" or className == "ModuleScript" then
+		return icon, Color3.fromRGB(236, 187, 85)
+	elseif className == "RemoteEvent" or className == "RemoteFunction" then
+		return icon, Color3.fromRGB(232, 112, 132)
+	elseif className == "Folder" or className == "Model" then
+		return icon, Color3.fromRGB(120, 180, 240)
+	elseif className == "Part" or className == "MeshPart" or className == "UnionOperation" then
+		return icon, Color3.fromRGB(133, 205, 145)
+	elseif string.find(className, "Gui", 1, true) ~= nil then
+		return icon, Color3.fromRGB(188, 142, 238)
+	end
+
+	return icon, Color3.fromRGB(160, 170, 184)
+end
+
+function ExplorerWindow._displayName(self: Window, id: number, name: string): string
+	if id == self.Hierarchy.RootId then
+		return "game"
+	end
+	return name
+end
+
 function ExplorerWindow._setPropertyRows(self: Window, values: { { string } })
 	for _, child in ipairs(self.Properties:GetChildren()) do
 		if child:GetAttribute("PascalCasePropertyRow") == true then
@@ -80,31 +186,51 @@ function ExplorerWindow._setPropertyRows(self: Window, values: { { string } })
 		end
 	end
 
-	local y = 8
-	for _, pair in ipairs(values) do
+	local y = 4
+	for index, pair in ipairs(values) do
 		local row = Instance.new("Frame")
 		row.Name = "PropertyRow"
-		row.BackgroundTransparency = 1
+		row.BackgroundColor3 = Color3.fromRGB(26, 29, 35)
+		row.BackgroundTransparency = if index % 2 == 0 then 0.35 else 1
 		row.BorderSizePixel = 0
-		row.Size = UDim2.new(1, -16, 0, 24)
-		row.Position = UDim2.fromOffset(8, y)
+		row.Size = UDim2.new(1, -12, 0, 25)
+		row.Position = UDim2.fromOffset(6, y)
 		row:SetAttribute("PascalCasePropertyRow", true)
 		row.Parent = self.Properties
 
-		local key = createLabel(row, pair[1], UDim2.new(0, 110, 1, 0), UDim2.fromOffset(0, 0))
-		key.TextColor3 = Color3.fromRGB(150, 160, 174)
+		local key = createLabel(row, pair[1], UDim2.new(0, 112, 1, 0), UDim2.fromOffset(6, 0))
+		key.TextColor3 = Color3.fromRGB(145, 156, 172)
+		key.TextSize = 13
 
-		local value = createLabel(row, pair[2], UDim2.new(1, -118, 1, 0), UDim2.fromOffset(118, 0))
+		local value = createLabel(row, pair[2], UDim2.new(1, -124, 1, 0), UDim2.fromOffset(120, 0))
 		value.TextWrapped = false
 		value.TextTruncate = Enum.TextTruncate.AtEnd
+		value.TextSize = 13
 
 		y += 26
 	end
 end
 
+function ExplorerWindow._showStatus(self: Window, message: string)
+	self._statusGeneration += 1
+	local generation = self._statusGeneration
+	self._statusOverride = message
+	self:_updateStatus()
+
+	task.delay(2, function()
+		if self._destroyed or generation ~= self._statusGeneration then
+			return
+		end
+
+		self._statusOverride = nil
+		self:_updateStatus()
+	end)
+end
+
 function ExplorerWindow._updateProperties(self: Window)
 	local selectedId = self.SelectedId
 	if selectedId == nil then
+		self.PropertyHeader.Text = "Properties"
 		self:_setPropertyRows({
 			{ "Selection", "None" },
 			{ "Hint", "Select an Instance from the tree." },
@@ -122,20 +248,31 @@ function ExplorerWindow._updateProperties(self: Window)
 		return
 	end
 
+	local displayName = self:_displayName(selectedId, node.Name)
+	self.PropertyHeader.Text = "Properties — " .. displayName
+
 	local parentName = "<root>"
 	if node.ParentId ~= nil then
 		local parentNode = self.Hierarchy.Tree:GetNode(node.ParentId)
 		if parentNode ~= nil then
-			parentName = parentNode.Name
+			parentName = self:_displayName(parentNode.Id, parentNode.Name)
 		end
 	end
 
 	local fullName = node.Name
-	local fullNameOk, result = pcall(function()
+	local fullNameOk, fullNameResult = pcall(function()
 		return object:GetFullName()
 	end)
 	if fullNameOk then
-		fullName = result
+		fullName = fullNameResult
+	end
+
+	local attributeCount = 0
+	local attributesOk, attributesResult = pcall(function()
+		return countAttributes(object)
+	end)
+	if attributesOk then
+		attributeCount = attributesResult
 	end
 
 	self:_setPropertyRows({
@@ -143,9 +280,40 @@ function ExplorerWindow._updateProperties(self: Window)
 		{ "ClassName", node.ClassName },
 		{ "Parent", parentName },
 		{ "Children", tostring(#node.Children) },
+		{ "Attributes", tostring(attributeCount) },
+		{ "Archivable", tostring(object.Archivable) },
 		{ "Node ID", tostring(node.Id) },
 		{ "FullName", fullName },
+		{ "Lua Path", makeLuaPath(object, self.Hierarchy.Root) },
 	})
+end
+
+function ExplorerWindow._findVisibleIndex(self: Window, id: number): number?
+	for index, row in ipairs(self.VisibleRows) do
+		if row.Id == id then
+			return index
+		end
+	end
+	return nil
+end
+
+function ExplorerWindow._scrollToId(self: Window, id: number)
+	local index = self:_findVisibleIndex(id)
+	if index == nil then
+		return
+	end
+
+	local rowTop = (index - 1) * ROW_HEIGHT
+	local rowBottom = rowTop + ROW_HEIGHT
+	local currentTop = self.TreeScroll.CanvasPosition.Y
+	local currentBottom = currentTop + self.TreeScroll.AbsoluteSize.Y
+
+	if rowTop < currentTop then
+		self.TreeScroll.CanvasPosition = Vector2.new(0, rowTop)
+	elseif rowBottom > currentBottom then
+		self.TreeScroll.CanvasPosition =
+			Vector2.new(0, math.max(0, rowBottom - self.TreeScroll.AbsoluteSize.Y))
+	end
 end
 
 function ExplorerWindow._select(self: Window, id: number)
@@ -153,6 +321,7 @@ function ExplorerWindow._select(self: Window, id: number)
 	self.Hierarchy:RefreshId(id)
 	self:_updateProperties()
 	self:_renderRows()
+	self:_scrollToId(id)
 end
 
 function ExplorerWindow._toggle(self: Window, id: number)
@@ -163,6 +332,24 @@ function ExplorerWindow._toggle(self: Window, id: number)
 
 	self.Expanded[id] = not self.Expanded[id]
 	self:_rebuildVisible()
+	self:_scrollToId(id)
+end
+
+function ExplorerWindow._expandAncestors(self: Window, id: number)
+	local node = self.Hierarchy.Tree:GetNode(id)
+	while node ~= nil and node.ParentId ~= nil do
+		self.Expanded[node.ParentId] = true
+		node = self.Hierarchy.Tree:GetNode(node.ParentId)
+	end
+end
+
+function ExplorerWindow._revealInTree(self: Window, id: number)
+	self:_expandAncestors(id)
+	self.SearchBox.Text = ""
+	self.SelectedId = id
+	self:_rebuildVisible()
+	self:_scrollToId(id)
+	self:_updateProperties()
 end
 
 function ExplorerWindow._buildTreeRows(self: Window): { VisibleRow }
@@ -227,13 +414,34 @@ function ExplorerWindow._buildSearchRows(self: Window, query: string): { Visible
 		if nodeB == nil then
 			return true
 		end
-		return string.lower(nodeA.Name) < string.lower(nodeB.Name)
+
+		local aName = string.lower(self:_displayName(nodeA.Id, nodeA.Name))
+		local bName = string.lower(self:_displayName(nodeB.Id, nodeB.Name))
+		local aExact = aName == lowered
+		local bExact = bName == lowered
+
+		if aExact ~= bExact then
+			return aExact
+		end
+
+		local aPrefix = string.sub(aName, 1, #lowered) == lowered
+		local bPrefix = string.sub(bName, 1, #lowered) == lowered
+		if aPrefix ~= bPrefix then
+			return aPrefix
+		end
+
+		return aName < bName
 	end)
 
 	return rows
 end
 
 function ExplorerWindow._updateStatus(self: Window)
+	if self._statusOverride ~= nil then
+		self.Status.Text = self._statusOverride
+		return
+	end
+
 	local stats = self.Hierarchy:GetStats()
 	local searchSuffix = ""
 	if self.SearchBox.Text ~= "" then
@@ -263,34 +471,50 @@ function ExplorerWindow._renderRows(self: Window)
 		if rowData == nil then
 			rowView.Frame.Visible = false
 			rowView.NodeId = nil
+			rowView.SearchResult = false
 		else
 			local node = self.Hierarchy.Tree:GetNode(rowData.Id)
 			if node == nil then
 				rowView.Frame.Visible = false
 				rowView.NodeId = nil
+				rowView.SearchResult = false
 			else
 				rowView.Frame.Visible = true
 				rowView.Frame.Position = UDim2.fromOffset(0, (visibleIndex - 1) * ROW_HEIGHT)
 				rowView.Frame.Size = UDim2.new(1, 0, 0, ROW_HEIGHT)
 				rowView.NodeId = rowData.Id
+				rowView.SearchResult = rowData.SearchResult
 
 				local hasChildren = #node.Children > 0 and not rowData.SearchResult
 				rowView.Toggle.Visible = hasChildren
 				rowView.Toggle.Text = if self.Expanded[rowData.Id] then "▼" else "▶"
 				rowView.Toggle.Position = UDim2.fromOffset(4 + rowData.Depth * 16, 1)
 
-				local textOffset = 26 + rowData.Depth * 16
+				local iconX = 24 + rowData.Depth * 16
 				if rowData.SearchResult then
-					textOffset = 8
+					iconX = 7
 				end
 
+				local object = self.Hierarchy:GetInstance(rowData.Id)
+				local isService = object ~= nil and object.Parent == self.Hierarchy.Root
+				local icon, iconColor = iconFor(
+					node.ClassName,
+					rowData.Id == self.Hierarchy.RootId,
+					isService
+				)
+				rowView.Icon.Position = UDim2.fromOffset(iconX, 1)
+				rowView.Icon.Text = icon
+				rowView.Icon.TextColor3 = iconColor
+
+				local textOffset = iconX + 24
 				rowView.Button.Position = UDim2.fromOffset(textOffset, 1)
 				rowView.Button.Size = UDim2.new(1, -textOffset - 4, 0, ROW_HEIGHT - 2)
 
+				local displayName = self:_displayName(rowData.Id, node.Name)
 				if rowData.SearchResult then
-					rowView.Button.Text = string.format("%s  <%s>", node.Name, node.ClassName)
+					rowView.Button.Text = string.format("%s  <%s>", displayName, node.ClassName)
 				else
-					rowView.Button.Text = node.Name
+					rowView.Button.Text = displayName
 				end
 
 				if self.SelectedId == rowData.Id then
@@ -338,6 +562,122 @@ function ExplorerWindow._scheduleRebuild(self: Window)
 	end)
 end
 
+function ExplorerWindow._hideContextMenu(self: Window)
+	self.ContextMenu.Visible = false
+	self.ContextDismiss.Visible = false
+	self.ContextNodeId = nil
+end
+
+function ExplorerWindow._copyValue(self: Window, label: string, value: string)
+	local success, message = Clipboard.Copy(value)
+	self:_hideContextMenu()
+
+	if success then
+		self:_showStatus("Copied " .. label .. " to clipboard")
+	else
+		self:_showStatus(message or "Clipboard copy failed")
+	end
+end
+
+function ExplorerWindow._openContextMenu(self: Window, id: number, position: Vector2)
+	local node = self.Hierarchy.Tree:GetNode(id)
+	local object = self.Hierarchy:GetInstance(id)
+	if node == nil or object == nil then
+		return
+	end
+
+	self:_select(id)
+	self.ContextNodeId = id
+
+	local camera = workspace.CurrentCamera
+	local viewport = if camera ~= nil then camera.ViewportSize else Vector2.new(1920, 1080)
+	local width = self.ContextMenu.Size.X.Offset
+	local height = self.ContextMenu.Size.Y.Offset
+	local x = math.clamp(position.X, 4, math.max(4, viewport.X - width - 4))
+	local y = math.clamp(position.Y, 4, math.max(4, viewport.Y - height - 4))
+
+	self.ContextMenu.Position = UDim2.fromOffset(x, y)
+	self.ContextDismiss.Visible = true
+	self.ContextMenu.Visible = true
+end
+
+function ExplorerWindow._createContextMenu(self: Window)
+	local actions = {
+		{
+			Label = "Copy Name",
+			Run = function(id: number)
+				local node = self.Hierarchy.Tree:GetNode(id)
+				if node ~= nil then
+					self:_copyValue("Name", node.Name)
+				end
+			end,
+		},
+		{
+			Label = "Copy Path",
+			Run = function(id: number)
+				local object = self.Hierarchy:GetInstance(id)
+				if object ~= nil then
+					self:_copyValue("Path", makeLuaPath(object, self.Hierarchy.Root))
+				end
+			end,
+		},
+		{
+			Label = "Copy ClassName",
+			Run = function(id: number)
+				local node = self.Hierarchy.Tree:GetNode(id)
+				if node ~= nil then
+					self:_copyValue("ClassName", node.ClassName)
+				end
+			end,
+		},
+		{
+			Label = "Reveal in Tree",
+			Run = function(id: number)
+				self:_hideContextMenu()
+				self:_revealInTree(id)
+			end,
+		},
+		{
+			Label = "Refresh",
+			Run = function(id: number)
+				self:_hideContextMenu()
+				self.Hierarchy:RefreshId(id)
+				self:_rebuildVisible()
+				self:_showStatus("Refreshed selected Instance")
+			end,
+		},
+	}
+
+	self.ContextMenu.Size = UDim2.fromOffset(168, #actions * 27 + 8)
+
+	for index, action in ipairs(actions) do
+		local button = Instance.new("TextButton")
+		button.Name = "Action"
+		button.AutoButtonColor = true
+		button.BackgroundColor3 = Color3.fromRGB(31, 35, 42)
+		button.BorderSizePixel = 0
+		button.Font = Enum.Font.Code
+		button.Text = "  " .. action.Label
+		button.TextColor3 = Color3.fromRGB(224, 228, 234)
+		button.TextSize = 13
+		button.TextXAlignment = Enum.TextXAlignment.Left
+		button.Position = UDim2.fromOffset(4, 4 + (index - 1) * 27)
+		button.Size = UDim2.new(1, -8, 0, 25)
+		button.ZIndex = 61
+		button.Parent = self.ContextMenu
+
+		table.insert(
+			self._connections,
+			button.MouseButton1Click:Connect(function()
+				local id = self.ContextNodeId
+				if id ~= nil then
+					action.Run(id)
+				end
+			end)
+		)
+	end
+end
+
 function ExplorerWindow._createRows(self: Window)
 	for _ = 1, ROW_POOL_SIZE do
 		local frame = Instance.new("Frame")
@@ -357,6 +697,18 @@ function ExplorerWindow._createRows(self: Window)
 		toggle.Size = UDim2.fromOffset(18, ROW_HEIGHT - 2)
 		toggle.Parent = frame
 
+		local icon = Instance.new("TextLabel")
+		icon.Name = "Icon"
+		icon.BackgroundTransparency = 1
+		icon.BorderSizePixel = 0
+		icon.Font = Enum.Font.Code
+		icon.Text = "·"
+		icon.TextColor3 = Color3.fromRGB(160, 170, 184)
+		icon.TextSize = 11
+		icon.TextXAlignment = Enum.TextXAlignment.Center
+		icon.Size = UDim2.fromOffset(22, ROW_HEIGHT - 2)
+		icon.Parent = frame
+
 		local button = Instance.new("TextButton")
 		button.Name = "Node"
 		button.BackgroundTransparency = 1
@@ -371,8 +723,11 @@ function ExplorerWindow._createRows(self: Window)
 		local rowView: RowView = {
 			Frame = frame,
 			Toggle = toggle,
+			Icon = icon,
 			Button = button,
 			NodeId = nil,
+			SearchResult = false,
+			LastClickAt = 0,
 		}
 
 		table.insert(
@@ -389,8 +744,36 @@ function ExplorerWindow._createRows(self: Window)
 			self._connections,
 			button.MouseButton1Click:Connect(function()
 				local id = rowView.NodeId
+				if id == nil then
+					return
+				end
+
+				local now = os.clock()
+				local doubleClick = now - rowView.LastClickAt <= DOUBLE_CLICK_SECONDS
+				rowView.LastClickAt = now
+
+				self:_select(id)
+
+				if doubleClick then
+					if rowView.SearchResult then
+						self:_revealInTree(id)
+					else
+						self:_toggle(id)
+					end
+				end
+			end)
+		)
+
+		table.insert(
+			self._connections,
+			button.InputBegan:Connect(function(input)
+				if input.UserInputType ~= Enum.UserInputType.MouseButton2 then
+					return
+				end
+
+				local id = rowView.NodeId
 				if id ~= nil then
-					self:_select(id)
+					self:_openContextMenu(id, Vector2.new(input.Position.X, input.Position.Y))
 				end
 			end)
 		)
@@ -440,6 +823,61 @@ function ExplorerWindow._enableDragging(self: Window, titleBar: Frame)
 				startPosition.Y.Scale,
 				startPosition.Y.Offset + delta.Y
 			)
+		end)
+	)
+end
+
+function ExplorerWindow._enableResizing(self: Window, grip: GuiObject)
+	local userInputService = game:GetService("UserInputService")
+	local resizing = false
+	local dragStart = Vector2.zero
+	local startSize = Vector2.zero
+
+	table.insert(
+		self._connections,
+		grip.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+				resizing = true
+				dragStart = Vector2.new(input.Position.X, input.Position.Y)
+				startSize = self.Main.AbsoluteSize
+			end
+		end)
+	)
+
+	table.insert(
+		self._connections,
+		userInputService.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+				resizing = false
+			end
+		end)
+	)
+
+	table.insert(
+		self._connections,
+		userInputService.InputChanged:Connect(function(input)
+			if not resizing or input.UserInputType ~= Enum.UserInputType.MouseMovement then
+				return
+			end
+
+			local currentPosition = Vector2.new(input.Position.X, input.Position.Y)
+			local delta = currentPosition - dragStart
+			local camera = workspace.CurrentCamera
+			local viewport = if camera ~= nil then camera.ViewportSize else Vector2.new(1920, 1080)
+
+			local width = math.clamp(
+				startSize.X + delta.X,
+				MIN_WINDOW_WIDTH,
+				math.max(MIN_WINDOW_WIDTH, viewport.X - 24)
+			)
+			local height = math.clamp(
+				startSize.Y + delta.Y,
+				MIN_WINDOW_HEIGHT,
+				math.max(MIN_WINDOW_HEIGHT, viewport.Y - 64)
+			)
+
+			self.Main.Size = UDim2.fromOffset(width, height)
+			self:_renderRows()
 		end)
 	)
 end
@@ -500,7 +938,7 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 
 	local searchBox = Instance.new("TextBox")
 	searchBox.Name = "Search"
-	searchBox.PlaceholderText = "Search name or class..."
+	searchBox.PlaceholderText = "Search name or class... (Enter to reveal)"
 	searchBox.ClearTextOnFocus = false
 	searchBox.Font = Enum.Font.Code
 	searchBox.Text = ""
@@ -537,7 +975,6 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 		createLabel(properties, "Properties", UDim2.new(1, -16, 0, 26), UDim2.fromOffset(8, 0))
 	propertyHeader.Font = Enum.Font.Code
 	propertyHeader.TextColor3 = Color3.fromRGB(235, 238, 243)
-	propertyHeader:SetAttribute("PascalCasePropertyRow", false)
 
 	local separator = Instance.new("Frame")
 	separator.BackgroundColor3 = Color3.fromRGB(60, 66, 76)
@@ -559,6 +996,42 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 	status.TextColor3 = Color3.fromRGB(145, 154, 168)
 	status.TextSize = 12
 
+	local resizeGrip = Instance.new("TextButton")
+	resizeGrip.Name = "ResizeGrip"
+	resizeGrip.Active = true
+	resizeGrip.AutoButtonColor = false
+	resizeGrip.BackgroundTransparency = 1
+	resizeGrip.BorderSizePixel = 0
+	resizeGrip.Font = Enum.Font.Code
+	resizeGrip.Text = "◢"
+	resizeGrip.TextColor3 = Color3.fromRGB(125, 134, 148)
+	resizeGrip.TextSize = 15
+	resizeGrip.AnchorPoint = Vector2.new(1, 1)
+	resizeGrip.Position = UDim2.fromScale(1, 1)
+	resizeGrip.Size = UDim2.fromOffset(22, 22)
+	resizeGrip.ZIndex = 20
+	resizeGrip.Parent = main
+
+	local contextDismiss = Instance.new("TextButton")
+	contextDismiss.Name = "ContextDismiss"
+	contextDismiss.BackgroundTransparency = 1
+	contextDismiss.BorderSizePixel = 0
+	contextDismiss.Text = ""
+	contextDismiss.AutoButtonColor = false
+	contextDismiss.Visible = false
+	contextDismiss.Size = UDim2.fromScale(1, 1)
+	contextDismiss.ZIndex = 50
+	contextDismiss.Parent = screenGui
+
+	local contextMenu = Instance.new("Frame")
+	contextMenu.Name = "ContextMenu"
+	contextMenu.BackgroundColor3 = Color3.fromRGB(25, 28, 34)
+	contextMenu.BorderColor3 = Color3.fromRGB(76, 83, 94)
+	contextMenu.BorderSizePixel = 1
+	contextMenu.Visible = false
+	contextMenu.ZIndex = 60
+	contextMenu.Parent = screenGui
+
 	local self: Window = setmetatable({
 		Hierarchy = hierarchy,
 		ScreenGui = screenGui,
@@ -566,7 +1039,11 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 		TreeScroll = treeScroll,
 		SearchBox = searchBox,
 		Properties = propertyContent,
+		PropertyHeader = propertyHeader,
 		Status = status,
+		ContextDismiss = contextDismiss,
+		ContextMenu = contextMenu,
+		ContextNodeId = nil,
 		Expanded = {
 			[hierarchy.RootId] = true,
 		},
@@ -577,12 +1054,16 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 		_disconnectHierarchy = nil,
 		_rebuildQueued = false,
 		_searchGeneration = 0,
+		_statusGeneration = 0,
+		_statusOverride = nil,
 		_destroyed = false,
 		_onClose = if options ~= nil then options.OnClose else nil,
 	}, ExplorerWindow)
 
 	self:_createRows()
+	self:_createContextMenu()
 	self:_enableDragging(titleBar)
+	self:_enableResizing(resizeGrip)
 
 	table.insert(
 		self._connections,
@@ -603,6 +1084,22 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 					self:_rebuildVisible()
 				end
 			end)
+		end)
+	)
+
+	table.insert(
+		self._connections,
+		searchBox.FocusLost:Connect(function(enterPressed)
+			if enterPressed and self.SearchBox.Text ~= "" and #self.VisibleRows > 0 then
+				self:_revealInTree(self.VisibleRows[1].Id)
+			end
+		end)
+	)
+
+	table.insert(
+		self._connections,
+		contextDismiss.MouseButton1Click:Connect(function()
+			self:_hideContextMenu()
 		end)
 	)
 

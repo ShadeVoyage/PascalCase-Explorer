@@ -4,48 +4,61 @@ PascalCase Explorer is a client-side Luau runtime explorer intended for debuggin
 
 ## Current status
 
-Phase 1 is platform-verified in Roblox. Phase 1.5 replaces the original per-Instance event model with a scalable global-event plus batched-reconciliation architecture before the Explorer GUI is built.
+Phase 1 is platform-verified in Roblox. Phase 1.5 replaced the original per-Instance signal model with three global connections plus batched reconciliation. Phase 2 provides a virtualized Explorer GUI, and Phase 2.1 adds core navigation and usability features.
 
-## Toolchain
+## Phase 2.1 GUI
 
-The project pins its developer tools with Rokit:
+The normal executor payload opens the Explorer automatically.
 
-- Darklua 0.19.0
-- Luau Language Server 1.69.0
-- Lune 0.10.5
-- Selene 0.31.0
-- StyLua 2.5.2
+Current GUI features:
 
-## Phase 1.5 scalability architecture
+- Virtualized hierarchy tree with 64 reusable row widgets
+- Root displayed as `game`
+- Lightweight class/service glyphs
+- Expand/collapse controls
+- Double-click to expand/collapse
+- Double-click a search result to reveal it in the hierarchy
+- Press Enter in search to reveal the first result
+- Selection auto-scroll
+- Draggable and resizable window
+- Right-click context menu
+  - Copy Name
+  - Copy Lua Path
+  - Copy ClassName
+  - Reveal in Tree
+  - Refresh
+- Clipboard actions use an isolated optional executor adapter and fail gracefully if the executor does not expose a clipboard function
+- Properties panel with Name, ClassName, Parent, child count, attribute count, Archivable, node ID, FullName, and a safe bracketed Lua path
+- Live status for tracked Instance count and hierarchy connection count
 
-The initial Phase 1 runtime attached Name and Ancestry signals to every tracked Instance. At 70,000 client-visible Instances that could exceed 100,000 event connections.
+Example copied Lua path:
 
-Phase 1.5 removes all per-Instance connections.
+```lua
+game["SoundService"]["Effects"]["VoidSwitch"]
+```
+
+## Scalability architecture
+
+The hierarchy runtime does not attach Name or Ancestry signals to every Instance.
 
 ```text
 Roblox hierarchy
       │
-      ├── DescendantAdded ─────┐
-      ├── DescendantRemoving ──┼── immediate add/remove handling
-      │                        │
-      └── RunService.Heartbeat ┘
+      ├── DescendantAdded
+      ├── DescendantRemoving
+      └── RunService.Heartbeat
                  │
                  ▼
         batched reconciliation
         512 nodes/frame default
-                 │
-          ┌──────┴──────┐
-          │             │
-       renames        moves
 ```
 
-A running hierarchy now uses exactly three global connections regardless of whether it tracks 100 Instances or 70,000.
-
-Renames and in-root reparenting are detected by a rolling background scan. New and removed descendants remain event-driven. Future UI code can call `RefreshObject()` or `RefreshId()` to immediately reconcile a selected or visible node instead of waiting for its background scan turn.
+A running hierarchy uses three global connections regardless of whether it tracks hundreds or hundreds of thousands of client-visible Instances.
 
 Runtime statistics are available through:
 
 ```lua
+local session = _G.__PascalCaseExplorerSession
 local stats = session.Hierarchy:GetStats()
 
 print(stats.TrackedInstances)
@@ -70,23 +83,6 @@ The normal runtime payload starts PascalCase and stores its session at:
 ```lua
 _G.__PascalCaseExplorerSession
 ```
-
-The Phase 1 test payload verifies hierarchy correctness.
-
-The Phase 1.5 performance payload measures the real client workload and verifies that PascalCase is using zero per-Instance connections:
-
-```text
-[PascalCase Explorer] Starting Phase 1.5 scalability test...
-[PascalCase Explorer] Tracked instances: ...
-[PascalCase Explorer] Global connections: 3
-[PascalCase Explorer] Per-instance connections: 0
-[PascalCase Explorer] Reconcile batch size: 512
-[PascalCase Explorer] Completed scan passes: ...
-[PascalCase Explorer] Last full scan: ... seconds
-[PascalCase Explorer] PHASE 1.5 SCALABILITY TEST: PASS
-```
-
-Use the payloads only in experiences you own or are explicitly authorized to test.
 
 ## Build locally
 
