@@ -12,7 +12,10 @@ assert(
 assert(type(Explorer.LiveHierarchy) == "table", "LiveHierarchy must be exported")
 assert(type(Explorer.LiveHierarchy.Start) == "function", "LiveHierarchy.Start must be available")
 assert(type(Explorer.PropertyInspector) == "table", "PropertyInspector must be exported")
-assert(type(Explorer.PropertyInspector.GetProperties) == "function", "PropertyInspector must be available")
+assert(
+	type(Explorer.PropertyInspector.GetProperties) == "function",
+	"PropertyInspector must be available"
+)
 assert(type(Explorer.ExplorerWindow) == "table", "ExplorerWindow must be exported")
 assert(type(Explorer.ExplorerWindow.new) == "function", "ExplorerWindow.new must be available")
 
