@@ -2,6 +2,7 @@
 
 local Clipboard = require("../Runtime/Clipboard")
 local PropertyInspector = require("../Runtime/PropertyInspector")
+local ClassIconProvider = require("./ClassIconProvider")
 
 local ROW_HEIGHT = 20
 local ROW_POOL_SIZE = 72
@@ -32,7 +33,8 @@ type VisibleRow = {
 type RowView = {
 	Frame: Frame,
 	Toggle: TextButton,
-	Icon: TextLabel,
+	IconImage: ImageLabel,
+	IconFallback: TextLabel,
 	Button: TextButton,
 	NodeId: number?,
 	SearchResult: boolean,
@@ -73,32 +75,6 @@ type WindowData = {
 }
 
 export type Window = typeof(setmetatable({} :: WindowData, ExplorerWindow))
-
-local CLASS_ICONS: { [string]: string } = {
-	Folder = "F",
-	Model = "M",
-	Part = "P",
-	MeshPart = "P",
-	UnionOperation = "P",
-	LocalScript = "LS",
-	Script = "SC",
-	ModuleScript = "MS",
-	RemoteEvent = "RE",
-	RemoteFunction = "RF",
-	BindableEvent = "BE",
-	BindableFunction = "BF",
-	Sound = "♪",
-	Animation = "A",
-	Camera = "C",
-	Tool = "T",
-	Humanoid = "H",
-	ScreenGui = "UI",
-	Frame = "UI",
-	TextLabel = "UI",
-	TextButton = "UI",
-	ImageLabel = "UI",
-	ImageButton = "UI",
-}
 
 local function createLabel(parent: Instance, text: string, size: UDim2, position: UDim2): TextLabel
 	local label = Instance.new("TextLabel")
@@ -148,32 +124,6 @@ local function makeLuaPath(object: Instance, root: Instance): string
 	end
 
 	return path
-end
-
-local function iconFor(className: string, isRoot: boolean, isService: boolean): (string, Color3)
-	if isRoot then
-		return "G", Color3.fromRGB(242, 190, 74)
-	end
-
-	if isService then
-		return "S", Color3.fromRGB(92, 184, 232)
-	end
-
-	local icon = CLASS_ICONS[className] or "·"
-
-	if className == "LocalScript" or className == "Script" or className == "ModuleScript" then
-		return icon, Color3.fromRGB(236, 187, 85)
-	elseif className == "RemoteEvent" or className == "RemoteFunction" then
-		return icon, Color3.fromRGB(232, 112, 132)
-	elseif className == "Folder" or className == "Model" then
-		return icon, Color3.fromRGB(120, 180, 240)
-	elseif className == "Part" or className == "MeshPart" or className == "UnionOperation" then
-		return icon, Color3.fromRGB(133, 205, 145)
-	elseif string.find(className, "Gui", 1, true) ~= nil then
-		return icon, Color3.fromRGB(188, 142, 238)
-	end
-
-	return icon, Color3.fromRGB(160, 170, 184)
 end
 
 function ExplorerWindow._displayName(self: Window, id: number, name: string): string
@@ -639,11 +589,27 @@ function ExplorerWindow._renderRows(self: Window)
 
 				local object = self.Hierarchy:GetInstance(rowData.Id)
 				local isService = object ~= nil and object.Parent == self.Hierarchy.Root
-				local icon, iconColor =
-					iconFor(node.ClassName, rowData.Id == self.Hierarchy.RootId, isService)
-				rowView.Icon.Position = UDim2.fromOffset(iconX, 1)
-				rowView.Icon.Text = icon
-				rowView.Icon.TextColor3 = iconColor
+				local icon = ClassIconProvider.Get(
+					node.ClassName,
+					rowData.Id == self.Hierarchy.RootId,
+					isService
+				)
+
+				rowView.IconImage.Position = UDim2.fromOffset(iconX + 3, 2)
+				rowView.IconFallback.Position = UDim2.fromOffset(iconX, 1)
+
+				if icon.Image ~= nil then
+					rowView.IconImage.Visible = true
+					rowView.IconImage.Image = icon.Image
+					rowView.IconImage.ImageRectOffset = icon.ImageRectOffset or Vector2.zero
+					rowView.IconImage.ImageRectSize = icon.ImageRectSize or Vector2.zero
+					rowView.IconFallback.Visible = false
+				else
+					rowView.IconImage.Visible = false
+					rowView.IconFallback.Visible = true
+					rowView.IconFallback.Text = icon.FallbackText
+					rowView.IconFallback.TextColor3 = icon.FallbackColor
+				end
 
 				local textOffset = iconX + 24
 				rowView.Button.Position = UDim2.fromOffset(textOffset, 1)
@@ -842,17 +808,26 @@ function ExplorerWindow._createRows(self: Window)
 		toggle.Size = UDim2.fromOffset(18, ROW_HEIGHT - 2)
 		toggle.Parent = frame
 
-		local icon = Instance.new("TextLabel")
-		icon.Name = "Icon"
-		icon.BackgroundTransparency = 1
-		icon.BorderSizePixel = 0
-		icon.Font = Enum.Font.SourceSans
-		icon.Text = "·"
-		icon.TextColor3 = Color3.fromRGB(160, 170, 184)
-		icon.TextSize = 11
-		icon.TextXAlignment = Enum.TextXAlignment.Center
-		icon.Size = UDim2.fromOffset(22, ROW_HEIGHT - 2)
-		icon.Parent = frame
+		local iconImage = Instance.new("ImageLabel")
+		iconImage.Name = "ClassIcon"
+		iconImage.BackgroundTransparency = 1
+		iconImage.BorderSizePixel = 0
+		iconImage.Size = UDim2.fromOffset(16, 16)
+		iconImage.ScaleType = Enum.ScaleType.Stretch
+		iconImage.Visible = false
+		iconImage.Parent = frame
+
+		local iconFallback = Instance.new("TextLabel")
+		iconFallback.Name = "IconFallback"
+		iconFallback.BackgroundTransparency = 1
+		iconFallback.BorderSizePixel = 0
+		iconFallback.Font = Enum.Font.SourceSans
+		iconFallback.Text = "·"
+		iconFallback.TextColor3 = Color3.fromRGB(160, 170, 184)
+		iconFallback.TextSize = 11
+		iconFallback.TextXAlignment = Enum.TextXAlignment.Center
+		iconFallback.Size = UDim2.fromOffset(22, ROW_HEIGHT - 2)
+		iconFallback.Parent = frame
 
 		local button = Instance.new("TextButton")
 		button.Name = "Node"
@@ -868,7 +843,8 @@ function ExplorerWindow._createRows(self: Window)
 		local rowView: RowView = {
 			Frame = frame,
 			Toggle = toggle,
-			Icon = icon,
+			IconImage = iconImage,
+			IconFallback = iconFallback,
 			Button = button,
 			NodeId = nil,
 			SearchResult = false,

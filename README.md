@@ -6,6 +6,14 @@ PascalCase Explorer is a client-side Luau runtime explorer intended for debuggin
 
 Phase 1 is platform-verified in Roblox. Phase 1.5 replaced per-Instance hierarchy signals with three global connections plus batched reconciliation. Phase 2 added the virtualized Explorer GUI. Phase 2.1 added navigation and context actions. Phase 2.2 added deeper property inspection and client-side property editing. Phase 2.3 redesigns the interface as a Roblox Studio-inspired right-docked Explorer and Properties shell.
 
+## Phase 2.4 Studio class icons
+
+PascalCase now asks Roblox for the class icon metadata used by Studio through `StudioService:GetClassIcon(className)`. When the runtime permits that PluginSecurity API, tree rows render the returned `Image`, `ImageRectOffset`, and `ImageRectSize` directly in a 16x16 `ImageLabel`.
+
+In normal live-game contexts Roblox may reject the Studio-only API. PascalCase handles that safely and falls back to its compact text glyphs instead of failing the Explorer. The icon provider caches successful official lookups by class name so virtualized row reuse does not repeatedly query StudioService.
+
+Because Roblox does not expose the modern Studio icon pack as a normal game asset API, exact current Studio icons in a live executor depend on whether that executor/runtime can legitimately access `StudioService:GetClassIcon`. PascalCase does not alter thread identity or bypass Roblox security to obtain them.
+
 ## Phase 2.3 Studio-style shell
 
 The floating PascalCase window has been replaced by a right-docked interface modeled after Roblox Studio's Explorer and Properties workflow.
