@@ -4,21 +4,60 @@ PascalCase Explorer is a client-side Luau runtime explorer intended for debuggin
 
 ## Current status
 
-Phase 1 is platform-verified in Roblox. Phase 1.5 replaced the original per-Instance signal model with three global connections plus batched reconciliation. Phase 2 provides a virtualized Explorer GUI, and Phase 2.1 adds core navigation and usability features.
+Phase 1 is platform-verified in Roblox. Phase 1.5 replaced per-Instance hierarchy signals with three global connections plus batched reconciliation. Phase 2 added the virtualized Explorer GUI. Phase 2.1 added navigation and context actions. Phase 2.2 adds deeper property inspection and client-side property editing.
 
-## Phase 2.1 GUI
+## Phase 2.2 property inspector
 
-The normal executor payload opens the Explorer automatically.
+The Properties pane now uses a dedicated `PropertyInspector` runtime module instead of hard-coded display rows.
 
-Current GUI features:
+It provides:
 
-- Virtualized hierarchy tree with 64 reusable row widgets
+- Categorized property groups
+- Property filtering
+- Editable text fields for supported property types
+- Read-only display for unsupported or protected values
+- Instance attributes listed in an Attributes section
+- Explorer metadata including child count, node ID, FullName, and Lua path
+- Graceful write errors when Roblox rejects a property change
+
+Supported editable value types:
+
+```text
+string
+number
+boolean
+Color3
+Vector2
+Vector3
+UDim
+UDim2
+EnumItem
+```
+
+Examples:
+
+```text
+Transparency        0.5
+Anchored            true
+Position            10, 5, -2
+Color               255, 128, 64
+Size                4, 1, 8
+Position (GUI)      0.5, -100, 0, 20
+Material            SmoothPlastic
+```
+
+The catalog includes common properties for BasePart, Humanoid, Sound, GuiObject, text/image UI objects, ScreenGui, Lighting, Camera, Animation, Decal, Texture, ProximityPrompt, ClickDetector, and ValueBase objects. Property availability is checked at runtime, so unavailable members are skipped rather than causing the Explorer to fail.
+
+Property changes are client-side. Roblox replication rules and game scripts may overwrite them, and server-authoritative state is not bypassed.
+
+## Phase 2.1 navigation
+
+The Explorer also includes:
+
 - Root displayed as `game`
 - Lightweight class/service glyphs
-- Expand/collapse controls
-- Double-click to expand/collapse
-- Double-click a search result to reveal it in the hierarchy
-- Press Enter in search to reveal the first result
+- Double-click expand/collapse
+- Search and reveal-in-tree navigation
 - Selection auto-scroll
 - Draggable and resizable window
 - Right-click context menu
@@ -27,35 +66,30 @@ Current GUI features:
   - Copy ClassName
   - Reveal in Tree
   - Refresh
-- Clipboard actions use an isolated optional executor adapter and fail gracefully if the executor does not expose a clipboard function
-- Properties panel with Name, ClassName, Parent, child count, attribute count, Archivable, node ID, FullName, and a safe bracketed Lua path
-- Live status for tracked Instance count and hierarchy connection count
+- Optional isolated clipboard adapter
+- Virtualized hierarchy rows
 
-Example copied Lua path:
+## Scalability
 
-```lua
-game["SoundService"]["Effects"]["VoidSwitch"]
-```
-
-## Scalability architecture
-
-The hierarchy runtime does not attach Name or Ancestry signals to every Instance.
+The hierarchy runtime uses:
 
 ```text
-Roblox hierarchy
-      │
-      ├── DescendantAdded
-      ├── DescendantRemoving
-      └── RunService.Heartbeat
-                 │
-                 ▼
-        batched reconciliation
-        512 nodes/frame default
+DescendantAdded
+DescendantRemoving
+RunService.Heartbeat
 ```
 
-A running hierarchy uses three global connections regardless of whether it tracks hundreds or hundreds of thousands of client-visible Instances.
+instead of attaching signals to every tracked Instance. The tree view uses a reusable row pool, so large client hierarchies do not create one GUI object per tracked Instance.
 
-Runtime statistics are available through:
+## Runtime access
+
+The normal bundle stores its session at:
+
+```lua
+_G.__PascalCaseExplorerSession
+```
+
+Example:
 
 ```lua
 local session = _G.__PascalCaseExplorerSession
@@ -64,24 +98,6 @@ local stats = session.Hierarchy:GetStats()
 print(stats.TrackedInstances)
 print(stats.ConnectionCount)
 print(stats.PerInstanceConnections)
-print(stats.CompletedPasses)
-print(stats.LastPassSeconds)
-```
-
-## Executor payloads
-
-Successful CI runs produce:
-
-```text
-PascalCaseExplorer.luau
-PascalCaseExplorer_Phase1Test.luau
-PascalCaseExplorer_PerformanceTest.luau
-```
-
-The normal runtime payload starts PascalCase and stores its session at:
-
-```lua
-_G.__PascalCaseExplorerSession
 ```
 
 ## Build locally

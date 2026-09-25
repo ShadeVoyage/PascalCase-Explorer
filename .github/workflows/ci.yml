@@ -33,6 +33,9 @@ jobs:
       - name: Roblox integration harness load test
         run: lune run tests/roblox_harness_smoke.luau
 
+      - name: PropertyInspector tests
+        run: lune run tests/property_inspector.luau
+
       - name: Build executor bundles
         run: |
           mkdir -p dist
