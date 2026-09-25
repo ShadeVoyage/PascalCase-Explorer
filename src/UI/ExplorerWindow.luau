@@ -1,6 +1,7 @@
 --!strict
 
 local Clipboard = require("../Runtime/Clipboard")
+local PropertyInspector = require("../Runtime/PropertyInspector")
 
 local ROW_HEIGHT = 22
 local ROW_POOL_SIZE = 64
@@ -40,7 +41,8 @@ type WindowData = {
 	Main: Frame,
 	TreeScroll: ScrollingFrame,
 	SearchBox: TextBox,
-	Properties: Frame,
+	Properties: ScrollingFrame,
+	PropertySearchBox: TextBox,
 	PropertyHeader: TextLabel,
 	Status: TextLabel,
 	ContextDismiss: TextButton,
@@ -51,6 +53,7 @@ type WindowData = {
 	Rows: { RowView },
 	SelectedId: number?,
 	_connections: { RBXScriptConnection },
+	_propertyConnections: { RBXScriptConnection },
 	_disconnectHierarchy: (() -> ())?,
 	_rebuildQueued: boolean,
 	_searchGeneration: number,
@@ -113,14 +116,6 @@ local function getGuiParent(): Instance
 	return player:WaitForChild("PlayerGui")
 end
 
-local function countAttributes(object: Instance): number
-	local count = 0
-	for _ in pairs(object:GetAttributes()) do
-		count += 1
-	end
-	return count
-end
-
 local function makeLuaPath(object: Instance, root: Instance): string
 	if object == root then
 		return "game"
@@ -179,36 +174,143 @@ function ExplorerWindow._displayName(self: Window, id: number, name: string): st
 	return name
 end
 
-function ExplorerWindow._setPropertyRows(self: Window, values: { { string } })
+function ExplorerWindow._clearPropertyRows(self: Window)
+	for _, connection in ipairs(self._propertyConnections) do
+		connection:Disconnect()
+	end
+	table.clear(self._propertyConnections)
+
 	for _, child in ipairs(self.Properties:GetChildren()) do
 		if child:GetAttribute("PascalCasePropertyRow") == true then
 			child:Destroy()
 		end
 	end
+end
 
+function ExplorerWindow._setPropertyRows(self: Window, entries: { any })
+	self:_clearPropertyRows()
+
+	local query = string.lower(string.gsub(self.PropertySearchBox.Text, "^%s*(.-)%s*$", "%1"))
 	local y = 4
-	for index, pair in ipairs(values) do
+	local currentCategory: string? = nil
+	local visibleCount = 0
+
+	for _, entry in ipairs(entries) do
+		local matches = query == ""
+			or string.find(string.lower(entry.Name), query, 1, true) ~= nil
+			or string.find(string.lower(entry.Category), query, 1, true) ~= nil
+			or string.find(string.lower(entry.ValueText), query, 1, true) ~= nil
+
+		if not matches then
+			continue
+		end
+
+		if currentCategory ~= entry.Category then
+			currentCategory = entry.Category
+
+			local header = createLabel(
+				self.Properties,
+				entry.Category,
+				UDim2.new(1, -12, 0, 22),
+				UDim2.fromOffset(6, y)
+			)
+			header.Name = "Category"
+			header.TextColor3 = Color3.fromRGB(104, 161, 219)
+			header.TextSize = 12
+			header:SetAttribute("PascalCasePropertyRow", true)
+			y += 23
+		end
+
+		visibleCount += 1
+
 		local row = Instance.new("Frame")
 		row.Name = "PropertyRow"
 		row.BackgroundColor3 = Color3.fromRGB(26, 29, 35)
-		row.BackgroundTransparency = if index % 2 == 0 then 0.35 else 1
+		row.BackgroundTransparency = if visibleCount % 2 == 0 then 0.35 else 1
 		row.BorderSizePixel = 0
-		row.Size = UDim2.new(1, -12, 0, 25)
+		row.Size = UDim2.new(1, -12, 0, 27)
 		row.Position = UDim2.fromOffset(6, y)
 		row:SetAttribute("PascalCasePropertyRow", true)
 		row.Parent = self.Properties
 
-		local key = createLabel(row, pair[1], UDim2.new(0, 112, 1, 0), UDim2.fromOffset(6, 0))
+		local key = createLabel(row, entry.Name, UDim2.new(0, 118, 1, 0), UDim2.fromOffset(6, 0))
 		key.TextColor3 = Color3.fromRGB(145, 156, 172)
 		key.TextSize = 13
 
-		local value = createLabel(row, pair[2], UDim2.new(1, -124, 1, 0), UDim2.fromOffset(120, 0))
-		value.TextWrapped = false
-		value.TextTruncate = Enum.TextTruncate.AtEnd
-		value.TextSize = 13
+		if entry.Editable then
+			local editor = Instance.new("TextBox")
+			editor.Name = "Editor"
+			editor.BackgroundColor3 = Color3.fromRGB(20, 23, 28)
+			editor.BorderColor3 = Color3.fromRGB(61, 68, 79)
+			editor.ClearTextOnFocus = false
+			editor.Font = Enum.Font.Code
+			editor.Text = entry.ValueText
+			editor.TextColor3 = Color3.fromRGB(225, 229, 235)
+			editor.TextSize = 13
+			editor.TextXAlignment = Enum.TextXAlignment.Left
+			editor.Position = UDim2.fromOffset(124, 2)
+			editor.Size = UDim2.new(1, -130, 1, -4)
+			editor.Parent = row
 
-		y += 26
+			local propertyName = entry.Name
+			local originalText = entry.ValueText
+			table.insert(
+				self._propertyConnections,
+				editor.FocusLost:Connect(function()
+					if self._destroyed or editor.Text == originalText then
+						return
+					end
+
+					local selectedId = self.SelectedId
+					local object = if selectedId ~= nil
+						then self.Hierarchy:GetInstance(selectedId)
+						else nil
+					if object == nil then
+						return
+					end
+
+					local success, message =
+						PropertyInspector.SetProperty(object, propertyName, editor.Text)
+					if success then
+						self.Hierarchy:RefreshObject(object)
+						self:_showStatus("Updated " .. propertyName)
+						self:_rebuildVisible()
+					else
+						editor.Text = originalText
+						self:_showStatus(message or ("Could not update " .. propertyName))
+					end
+				end)
+			)
+		else
+			local value = createLabel(
+				row,
+				entry.ValueText,
+				UDim2.new(1, -130, 1, 0),
+				UDim2.fromOffset(124, 0)
+			)
+			value.TextWrapped = false
+			value.TextTruncate = Enum.TextTruncate.AtEnd
+			value.TextSize = 13
+			value.TextColor3 = Color3.fromRGB(190, 197, 208)
+		end
+
+		y += 28
 	end
+
+	if visibleCount == 0 then
+		local empty = createLabel(
+			self.Properties,
+			"No matching properties",
+			UDim2.new(1, -12, 0, 28),
+			UDim2.fromOffset(6, 6)
+		)
+		empty.TextColor3 = Color3.fromRGB(130, 140, 154)
+		empty.TextSize = 13
+		empty:SetAttribute("PascalCasePropertyRow", true)
+		y = 38
+	end
+
+	self.Properties.CanvasSize = UDim2.fromOffset(0, y + 6)
 end
 
 function ExplorerWindow._showStatus(self: Window, message: string)
@@ -231,10 +333,18 @@ function ExplorerWindow._updateProperties(self: Window)
 	local selectedId = self.SelectedId
 	if selectedId == nil then
 		self.PropertyHeader.Text = "Properties"
-		self:_setPropertyRows({
-			{ "Selection", "None" },
-			{ "Hint", "Select an Instance from the tree." },
-		})
+		self:_clearPropertyRows()
+
+		local hint = createLabel(
+			self.Properties,
+			"Select an Instance from the tree.",
+			UDim2.new(1, -12, 0, 28),
+			UDim2.fromOffset(6, 6)
+		)
+		hint.TextColor3 = Color3.fromRGB(130, 140, 154)
+		hint.TextSize = 13
+		hint:SetAttribute("PascalCasePropertyRow", true)
+		self.Properties.CanvasSize = UDim2.fromOffset(0, 40)
 		return
 	end
 
@@ -251,13 +361,23 @@ function ExplorerWindow._updateProperties(self: Window)
 	local displayName = self:_displayName(selectedId, node.Name)
 	self.PropertyHeader.Text = "Properties — " .. displayName
 
-	local parentName = "<root>"
-	if node.ParentId ~= nil then
-		local parentNode = self.Hierarchy.Tree:GetNode(node.ParentId)
-		if parentNode ~= nil then
-			parentName = self:_displayName(parentNode.Id, parentNode.Name)
-		end
-	end
+	local entries = PropertyInspector.GetProperties(object)
+	table.insert(entries, {
+		Name = "Children",
+		Category = "Explorer",
+		Value = #node.Children,
+		ValueText = tostring(#node.Children),
+		ValueType = "number",
+		Editable = false,
+	})
+	table.insert(entries, {
+		Name = "Node ID",
+		Category = "Explorer",
+		Value = node.Id,
+		ValueText = tostring(node.Id),
+		ValueType = "number",
+		Editable = false,
+	})
 
 	local fullName = node.Name
 	local fullNameOk, fullNameResult = pcall(function()
@@ -267,25 +387,36 @@ function ExplorerWindow._updateProperties(self: Window)
 		fullName = fullNameResult
 	end
 
-	local attributeCount = 0
-	local attributesOk, attributesResult = pcall(function()
-		return countAttributes(object)
-	end)
-	if attributesOk then
-		attributeCount = attributesResult
+	local luaPath = makeLuaPath(object, self.Hierarchy.Root)
+	table.insert(entries, {
+		Name = "FullName",
+		Category = "Explorer",
+		Value = fullName,
+		ValueText = fullName,
+		ValueType = "string",
+		Editable = false,
+	})
+	table.insert(entries, {
+		Name = "Lua Path",
+		Category = "Explorer",
+		Value = luaPath,
+		ValueText = luaPath,
+		ValueType = "string",
+		Editable = false,
+	})
+
+	for attributeName, attributeValue in pairs(object:GetAttributes()) do
+		table.insert(entries, {
+			Name = "@" .. attributeName,
+			Category = "Attributes",
+			Value = attributeValue,
+			ValueText = PropertyInspector.FormatValue(attributeValue),
+			ValueType = typeof(attributeValue),
+			Editable = false,
+		})
 	end
 
-	self:_setPropertyRows({
-		{ "Name", node.Name },
-		{ "ClassName", node.ClassName },
-		{ "Parent", parentName },
-		{ "Children", tostring(#node.Children) },
-		{ "Attributes", tostring(attributeCount) },
-		{ "Archivable", tostring(object.Archivable) },
-		{ "Node ID", tostring(node.Id) },
-		{ "FullName", fullName },
-		{ "Lua Path", makeLuaPath(object, self.Hierarchy.Root) },
-	})
+	self:_setPropertyRows(entries)
 end
 
 function ExplorerWindow._findVisibleIndex(self: Window, id: number): number?
@@ -973,19 +1104,31 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 	propertyHeader.Font = Enum.Font.Code
 	propertyHeader.TextColor3 = Color3.fromRGB(235, 238, 243)
 
-	local separator = Instance.new("Frame")
-	separator.BackgroundColor3 = Color3.fromRGB(60, 66, 76)
-	separator.BorderSizePixel = 0
-	separator.Position = UDim2.fromOffset(8, 30)
-	separator.Size = UDim2.new(1, -16, 0, 1)
-	separator.Parent = properties
+	local propertySearchBox = Instance.new("TextBox")
+	propertySearchBox.Name = "PropertySearch"
+	propertySearchBox.PlaceholderText = "Filter properties..."
+	propertySearchBox.ClearTextOnFocus = false
+	propertySearchBox.Font = Enum.Font.Code
+	propertySearchBox.Text = ""
+	propertySearchBox.TextColor3 = Color3.fromRGB(225, 228, 234)
+	propertySearchBox.PlaceholderColor3 = Color3.fromRGB(125, 133, 145)
+	propertySearchBox.TextSize = 13
+	propertySearchBox.TextXAlignment = Enum.TextXAlignment.Left
+	propertySearchBox.BackgroundColor3 = Color3.fromRGB(21, 24, 29)
+	propertySearchBox.BorderColor3 = Color3.fromRGB(66, 72, 82)
+	propertySearchBox.Position = UDim2.fromOffset(8, 29)
+	propertySearchBox.Size = UDim2.new(1, -16, 0, 27)
+	propertySearchBox.Parent = properties
 
-	local propertyContent = Instance.new("Frame")
+	local propertyContent = Instance.new("ScrollingFrame")
 	propertyContent.Name = "PropertyContent"
 	propertyContent.BackgroundTransparency = 1
 	propertyContent.BorderSizePixel = 0
-	propertyContent.Position = UDim2.fromOffset(0, 34)
-	propertyContent.Size = UDim2.new(1, 0, 1, -34)
+	propertyContent.ScrollBarThickness = 6
+	propertyContent.ScrollingDirection = Enum.ScrollingDirection.Y
+	propertyContent.CanvasSize = UDim2.fromOffset(0, 0)
+	propertyContent.Position = UDim2.fromOffset(0, 60)
+	propertyContent.Size = UDim2.new(1, 0, 1, -60)
 	propertyContent.Parent = properties
 
 	local status =
@@ -1036,6 +1179,7 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 		TreeScroll = treeScroll,
 		SearchBox = searchBox,
 		Properties = propertyContent,
+		PropertySearchBox = propertySearchBox,
 		PropertyHeader = propertyHeader,
 		Status = status,
 		ContextDismiss = contextDismiss,
@@ -1048,6 +1192,7 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 		Rows = {},
 		SelectedId = nil,
 		_connections = {},
+		_propertyConnections = {},
 		_disconnectHierarchy = nil,
 		_rebuildQueued = false,
 		_searchGeneration = 0,
@@ -1090,6 +1235,13 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 			if enterPressed and self.SearchBox.Text ~= "" and #self.VisibleRows > 0 then
 				self:_revealInTree(self.VisibleRows[1].Id)
 			end
+		end)
+	)
+
+	table.insert(
+		self._connections,
+		propertySearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+			self:_updateProperties()
 		end)
 	)
 
@@ -1150,6 +1302,11 @@ function ExplorerWindow.Destroy(self: Window)
 		connection:Disconnect()
 	end
 	table.clear(self._connections)
+
+	for _, connection in ipairs(self._propertyConnections) do
+		connection:Disconnect()
+	end
+	table.clear(self._propertyConnections)
 
 	self.ScreenGui:Destroy()
 end
