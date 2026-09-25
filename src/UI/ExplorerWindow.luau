@@ -297,7 +297,7 @@ function ExplorerWindow._setPropertyRows(self: Window, entries: { any })
 				row,
 				entry.ValueText,
 				UDim2.new(0.57, -6, 1, 0),
-				UDim2.new(0.43, 0, 0, 0)
+				UDim2.fromScale(0.43, 0)
 			)
 			value.TextWrapped = false
 			value.TextTruncate = Enum.TextTruncate.AtEnd
@@ -1073,7 +1073,7 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 	local main = Instance.new("Frame")
 	main.Name = "StudioDock"
 	main.AnchorPoint = Vector2.new(1, 0)
-	main.Position = UDim2.new(1, 0, 0, 0)
+	main.Position = UDim2.fromScale(1, 0)
 	main.Size = UDim2.new(0, DEFAULT_DOCK_WIDTH, 1, 0)
 	main.BackgroundColor3 = Color3.fromRGB(31, 33, 38)
 	main.BorderColor3 = Color3.fromRGB(64, 68, 76)
