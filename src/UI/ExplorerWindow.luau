@@ -3,14 +3,17 @@
 local Clipboard = require("../Runtime/Clipboard")
 local PropertyInspector = require("../Runtime/PropertyInspector")
 
-local ROW_HEIGHT = 22
-local ROW_POOL_SIZE = 64
+local ROW_HEIGHT = 20
+local ROW_POOL_SIZE = 72
 local SEARCH_LIMIT = 500
 local SEARCH_DELAY = 0.15
 local REBUILD_DELAY = 0.03
 local DOUBLE_CLICK_SECONDS = 0.32
-local MIN_WINDOW_WIDTH = 640
-local MIN_WINDOW_HEIGHT = 380
+local DEFAULT_DOCK_WIDTH = 340
+local MIN_DOCK_WIDTH = 280
+local MAX_DOCK_WIDTH = 620
+local DEFAULT_PANE_SPLIT = 0.58
+local MIN_PANE_HEIGHT = 130
 
 local ExplorerWindow = {}
 ExplorerWindow.__index = ExplorerWindow
@@ -34,12 +37,16 @@ type RowView = {
 	NodeId: number?,
 	SearchResult: boolean,
 	LastClickAt: number,
+	Hovering: boolean,
 }
 
 type WindowData = {
 	Hierarchy: any,
 	ScreenGui: ScreenGui,
 	Main: Frame,
+	ExplorerPane: Frame,
+	PropertiesPane: Frame,
+	Divider: Frame,
 	TreeScroll: ScrollingFrame,
 	SearchBox: TextBox,
 	Properties: ScrollingFrame,
@@ -60,6 +67,7 @@ type WindowData = {
 	_searchGeneration: number,
 	_statusGeneration: number,
 	_statusOverride: string?,
+	_paneSplit: number,
 	_destroyed: boolean,
 	_onClose: (() -> ())?,
 }
@@ -96,7 +104,7 @@ local function createLabel(parent: Instance, text: string, size: UDim2, position
 	local label = Instance.new("TextLabel")
 	label.BackgroundTransparency = 1
 	label.BorderSizePixel = 0
-	label.Font = Enum.Font.Code
+	label.Font = Enum.Font.SourceSans
 	label.Text = text
 	label.TextColor3 = Color3.fromRGB(220, 224, 230)
 	label.TextSize = 14
@@ -216,7 +224,9 @@ function ExplorerWindow._setPropertyRows(self: Window, entries: { any })
 				UDim2.fromOffset(6, y)
 			)
 			header.Name = "Category"
-			header.TextColor3 = Color3.fromRGB(104, 161, 219)
+			header.BackgroundColor3 = Color3.fromRGB(42, 45, 51)
+			header.BackgroundTransparency = 0
+			header.TextColor3 = Color3.fromRGB(214, 218, 224)
 			header.TextSize = 12
 			header:SetAttribute("PascalCasePropertyRow", true)
 			y += 23
@@ -234,7 +244,8 @@ function ExplorerWindow._setPropertyRows(self: Window, entries: { any })
 		row:SetAttribute("PascalCasePropertyRow", true)
 		row.Parent = self.Properties
 
-		local key = createLabel(row, entry.Name, UDim2.new(0, 118, 1, 0), UDim2.fromOffset(6, 0))
+		local key =
+			createLabel(row, entry.Name, UDim2.new(0.43, -8, 1, 0), UDim2.fromOffset(6, 0))
 		key.TextColor3 = Color3.fromRGB(145, 156, 172)
 		key.TextSize = 13
 
@@ -244,13 +255,13 @@ function ExplorerWindow._setPropertyRows(self: Window, entries: { any })
 			editor.BackgroundColor3 = Color3.fromRGB(20, 23, 28)
 			editor.BorderColor3 = Color3.fromRGB(61, 68, 79)
 			editor.ClearTextOnFocus = false
-			editor.Font = Enum.Font.Code
+			editor.Font = Enum.Font.SourceSans
 			editor.Text = entry.ValueText
 			editor.TextColor3 = Color3.fromRGB(225, 229, 235)
 			editor.TextSize = 13
 			editor.TextXAlignment = Enum.TextXAlignment.Left
-			editor.Position = UDim2.fromOffset(124, 2)
-			editor.Size = UDim2.new(1, -130, 1, -4)
+			editor.Position = UDim2.new(0.43, 0, 0, 2)
+			editor.Size = UDim2.new(0.57, -6, 1, -4)
 			editor.Parent = row
 
 			local propertyName = entry.Name
@@ -286,8 +297,8 @@ function ExplorerWindow._setPropertyRows(self: Window, entries: { any })
 			local value = createLabel(
 				row,
 				entry.ValueText,
-				UDim2.new(1, -130, 1, 0),
-				UDim2.fromOffset(124, 0)
+				UDim2.new(0.57, -6, 1, 0),
+				UDim2.new(0.43, 0, 0, 0)
 			)
 			value.TextWrapped = false
 			value.TextTruncate = Enum.TextTruncate.AtEnd
@@ -646,11 +657,15 @@ function ExplorerWindow._renderRows(self: Window)
 					rowView.Button.Text = displayName
 				end
 
+				rowView.Button.BackgroundTransparency = 1
 				if self.SelectedId == rowData.Id then
-					rowView.Button.BackgroundColor3 = Color3.fromRGB(54, 82, 120)
-					rowView.Button.BackgroundTransparency = 0
+					rowView.Frame.BackgroundColor3 = Color3.fromRGB(0, 112, 180)
+					rowView.Frame.BackgroundTransparency = 0
+				elseif rowView.Hovering then
+					rowView.Frame.BackgroundColor3 = Color3.fromRGB(49, 53, 60)
+					rowView.Frame.BackgroundTransparency = 0
 				else
-					rowView.Button.BackgroundTransparency = 1
+					rowView.Frame.BackgroundTransparency = 1
 				end
 			end
 		end
@@ -784,9 +799,9 @@ function ExplorerWindow._createContextMenu(self: Window)
 		local button = Instance.new("TextButton")
 		button.Name = "Action"
 		button.AutoButtonColor = true
-		button.BackgroundColor3 = Color3.fromRGB(31, 35, 42)
+		button.BackgroundColor3 = Color3.fromRGB(45, 48, 54)
 		button.BorderSizePixel = 0
-		button.Font = Enum.Font.Code
+		button.Font = Enum.Font.SourceSans
 		button.Text = "  " .. action.Label
 		button.TextColor3 = Color3.fromRGB(224, 228, 234)
 		button.TextSize = 13
@@ -811,6 +826,7 @@ end
 function ExplorerWindow._createRows(self: Window)
 	for _ = 1, ROW_POOL_SIZE do
 		local frame = Instance.new("Frame")
+		frame.BackgroundColor3 = Color3.fromRGB(49, 53, 60)
 		frame.BackgroundTransparency = 1
 		frame.BorderSizePixel = 0
 		frame.Visible = false
@@ -820,7 +836,7 @@ function ExplorerWindow._createRows(self: Window)
 		toggle.Name = "Toggle"
 		toggle.BackgroundTransparency = 1
 		toggle.BorderSizePixel = 0
-		toggle.Font = Enum.Font.Code
+		toggle.Font = Enum.Font.SourceSans
 		toggle.Text = "▶"
 		toggle.TextColor3 = Color3.fromRGB(175, 183, 195)
 		toggle.TextSize = 12
@@ -831,7 +847,7 @@ function ExplorerWindow._createRows(self: Window)
 		icon.Name = "Icon"
 		icon.BackgroundTransparency = 1
 		icon.BorderSizePixel = 0
-		icon.Font = Enum.Font.Code
+		icon.Font = Enum.Font.SourceSans
 		icon.Text = "·"
 		icon.TextColor3 = Color3.fromRGB(160, 170, 184)
 		icon.TextSize = 11
@@ -843,7 +859,7 @@ function ExplorerWindow._createRows(self: Window)
 		button.Name = "Node"
 		button.BackgroundTransparency = 1
 		button.BorderSizePixel = 0
-		button.Font = Enum.Font.Code
+		button.Font = Enum.Font.SourceSans
 		button.TextColor3 = Color3.fromRGB(220, 224, 230)
 		button.TextSize = 14
 		button.TextXAlignment = Enum.TextXAlignment.Left
@@ -858,6 +874,7 @@ function ExplorerWindow._createRows(self: Window)
 			NodeId = nil,
 			SearchResult = false,
 			LastClickAt = 0,
+			Hovering = false,
 		}
 
 		table.insert(
@@ -908,68 +925,61 @@ function ExplorerWindow._createRows(self: Window)
 			end)
 		)
 
+		table.insert(
+			self._connections,
+			button.MouseEnter:Connect(function()
+				rowView.Hovering = true
+				self:_renderRows()
+			end)
+		)
+
+		table.insert(
+			self._connections,
+			button.MouseLeave:Connect(function()
+				rowView.Hovering = false
+				self:_renderRows()
+			end)
+		)
+
 		table.insert(self.Rows, rowView)
 	end
 end
 
-function ExplorerWindow._enableDragging(self: Window, titleBar: Frame)
-	local userInputService = game:GetService("UserInputService")
-	local dragging = false
-	local dragStart = Vector2.zero
-	local startPosition = self.Main.Position
+function ExplorerWindow._layoutPanes(self: Window)
+	local height = self.Main.AbsoluteSize.Y
+	if height <= 0 then
+		return
+	end
 
-	table.insert(
-		self._connections,
-		titleBar.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 then
-				dragging = true
-				dragStart = Vector2.new(input.Position.X, input.Position.Y)
-				startPosition = self.Main.Position
-			end
-		end)
-	)
+	local minSplit = math.clamp(MIN_PANE_HEIGHT / height, 0.18, 0.44)
+	local maxSplit = 1 - minSplit
+	self._paneSplit = math.clamp(self._paneSplit, minSplit, maxSplit)
 
-	table.insert(
-		self._connections,
-		userInputService.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 then
-				dragging = false
-			end
-		end)
-	)
-
-	table.insert(
-		self._connections,
-		userInputService.InputChanged:Connect(function(input)
-			if not dragging or input.UserInputType ~= Enum.UserInputType.MouseMovement then
-				return
-			end
-
-			local currentPosition = Vector2.new(input.Position.X, input.Position.Y)
-			local delta = currentPosition - dragStart
-			self.Main.Position = UDim2.new(
-				startPosition.X.Scale,
-				startPosition.X.Offset + delta.X,
-				startPosition.Y.Scale,
-				startPosition.Y.Offset + delta.Y
-			)
-		end)
-	)
+	local dividerHeight = 5
+	self.ExplorerPane.Position = UDim2.fromOffset(0, 0)
+	self.ExplorerPane.Size = UDim2.new(1, 0, self._paneSplit, -math.ceil(dividerHeight / 2))
+	self.Divider.Position =
+		UDim2.new(0, 0, self._paneSplit, -math.floor(dividerHeight / 2))
+	self.Divider.Size = UDim2.new(1, 0, 0, dividerHeight)
+	self.PropertiesPane.Position =
+		UDim2.new(0, 0, self._paneSplit, math.ceil(dividerHeight / 2))
+	self.PropertiesPane.Size =
+		UDim2.new(1, 0, 1 - self._paneSplit, -math.ceil(dividerHeight / 2))
 end
 
-function ExplorerWindow._enableResizing(self: Window, grip: GuiObject)
+function ExplorerWindow._enableDockWidthResize(self: Window, grip: GuiObject)
 	local userInputService = game:GetService("UserInputService")
 	local resizing = false
-	local dragStart = Vector2.zero
-	local startSize = Vector2.zero
+	local dragStartX = 0
+	local startWidth = DEFAULT_DOCK_WIDTH
 
 	table.insert(
 		self._connections,
 		grip.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 then
 				resizing = true
-				dragStart = Vector2.new(input.Position.X, input.Position.Y)
-				startSize = self.Main.AbsoluteSize
+				dragStartX = input.Position.X
+				startWidth = self.Main.AbsoluteSize.X
 			end
 		end)
 	)
@@ -990,23 +1000,65 @@ function ExplorerWindow._enableResizing(self: Window, grip: GuiObject)
 				return
 			end
 
-			local currentPosition = Vector2.new(input.Position.X, input.Position.Y)
-			local delta = currentPosition - dragStart
 			local camera = workspace.CurrentCamera
-			local viewport = if camera ~= nil then camera.ViewportSize else Vector2.new(1920, 1080)
-
+			local viewportWidth = if camera ~= nil then camera.ViewportSize.X else 1920
+			local maximum = math.max(
+				MIN_DOCK_WIDTH,
+				math.min(MAX_DOCK_WIDTH, viewportWidth - 120)
+			)
 			local width = math.clamp(
-				startSize.X + delta.X,
-				MIN_WINDOW_WIDTH,
-				math.max(MIN_WINDOW_WIDTH, viewport.X - 24)
-			)
-			local height = math.clamp(
-				startSize.Y + delta.Y,
-				MIN_WINDOW_HEIGHT,
-				math.max(MIN_WINDOW_HEIGHT, viewport.Y - 64)
+				startWidth + (dragStartX - input.Position.X),
+				MIN_DOCK_WIDTH,
+				maximum
 			)
 
-			self.Main.Size = UDim2.fromOffset(width, height)
+			self.Main.Size = UDim2.new(0, width, 1, 0)
+			self:_layoutPanes()
+			self:_renderRows()
+		end)
+	)
+end
+
+function ExplorerWindow._enablePaneSplitResize(self: Window, divider: GuiObject)
+	local userInputService = game:GetService("UserInputService")
+	local resizing = false
+	local dragStartY = 0
+	local startSplit = DEFAULT_PANE_SPLIT
+
+	table.insert(
+		self._connections,
+		divider.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+				resizing = true
+				dragStartY = input.Position.Y
+				startSplit = self._paneSplit
+			end
+		end)
+	)
+
+	table.insert(
+		self._connections,
+		userInputService.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+				resizing = false
+			end
+		end)
+	)
+
+	table.insert(
+		self._connections,
+		userInputService.InputChanged:Connect(function(input)
+			if not resizing or input.UserInputType ~= Enum.UserInputType.MouseMovement then
+				return
+			end
+
+			local height = self.Main.AbsoluteSize.Y
+			if height <= 0 then
+				return
+			end
+
+			self._paneSplit = startSplit + (input.Position.Y - dragStartY) / height
+			self:_layoutPanes()
 			self:_renderRows()
 		end)
 	)
@@ -1029,131 +1081,201 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 	screenGui.Parent = guiParent
 
 	local main = Instance.new("Frame")
-	main.Name = "Window"
-	main.AnchorPoint = Vector2.new(0.5, 0.5)
-	main.Position = UDim2.fromScale(0.5, 0.5)
-	main.Size = UDim2.fromOffset(860, 560)
-	main.BackgroundColor3 = Color3.fromRGB(27, 30, 36)
-	main.BorderColor3 = Color3.fromRGB(72, 78, 88)
+	main.Name = "StudioDock"
+	main.AnchorPoint = Vector2.new(1, 0)
+	main.Position = UDim2.new(1, 0, 0, 0)
+	main.Size = UDim2.new(0, DEFAULT_DOCK_WIDTH, 1, 0)
+	main.BackgroundColor3 = Color3.fromRGB(31, 33, 38)
+	main.BorderColor3 = Color3.fromRGB(64, 68, 76)
 	main.BorderSizePixel = 1
+	main.ClipsDescendants = true
 	main.Parent = screenGui
 
-	local titleBar = Instance.new("Frame")
-	titleBar.Name = "TitleBar"
-	titleBar.Active = true
-	titleBar.BackgroundColor3 = Color3.fromRGB(36, 40, 47)
-	titleBar.BorderSizePixel = 0
-	titleBar.Size = UDim2.new(1, 0, 0, 32)
-	titleBar.Parent = main
+	local widthGrip = Instance.new("TextButton")
+	widthGrip.Name = "WidthGrip"
+	widthGrip.Active = true
+	widthGrip.AutoButtonColor = false
+	widthGrip.BackgroundColor3 = Color3.fromRGB(72, 76, 84)
+	widthGrip.BackgroundTransparency = 0.45
+	widthGrip.BorderSizePixel = 0
+	widthGrip.Text = ""
+	widthGrip.Size = UDim2.new(0, 5, 1, 0)
+	widthGrip.ZIndex = 20
+	widthGrip.Parent = main
+
+	local explorerPane = Instance.new("Frame")
+	explorerPane.Name = "ExplorerPane"
+	explorerPane.BackgroundColor3 = Color3.fromRGB(30, 32, 37)
+	explorerPane.BorderSizePixel = 0
+	explorerPane.Position = UDim2.fromOffset(0, 0)
+	explorerPane.Size = UDim2.new(1, 0, DEFAULT_PANE_SPLIT, -3)
+	explorerPane.ClipsDescendants = true
+	explorerPane.Parent = main
+
+	local explorerHeader = Instance.new("Frame")
+	explorerHeader.Name = "Header"
+	explorerHeader.BackgroundColor3 = Color3.fromRGB(37, 40, 46)
+	explorerHeader.BorderSizePixel = 0
+	explorerHeader.Size = UDim2.new(1, 0, 0, 25)
+	explorerHeader.Parent = explorerPane
 
 	local version = if options ~= nil and options.Version ~= nil then options.Version else "dev"
-	local title = createLabel(
-		titleBar,
-		"PascalCase Explorer  " .. version,
-		UDim2.new(1, -44, 1, 0),
-		UDim2.fromOffset(10, 0)
+	local explorerTitle = createLabel(
+		explorerHeader,
+		"Explorer",
+		UDim2.new(1, -94, 1, 0),
+		UDim2.fromOffset(8, 0)
 	)
-	title.TextSize = 15
+	explorerTitle.TextSize = 14
+
+	local versionLabel = createLabel(
+		explorerHeader,
+		version,
+		UDim2.fromOffset(78, 25),
+		UDim2.new(1, -170, 0, 0)
+	)
+	versionLabel.TextColor3 = Color3.fromRGB(132, 140, 151)
+	versionLabel.TextSize = 11
+	versionLabel.TextXAlignment = Enum.TextXAlignment.Right
+
+	local refreshButton = Instance.new("TextButton")
+	refreshButton.Name = "Refresh"
+	refreshButton.AutoButtonColor = true
+	refreshButton.BackgroundTransparency = 1
+	refreshButton.BorderSizePixel = 0
+	refreshButton.Font = Enum.Font.SourceSans
+	refreshButton.Text = "↻"
+	refreshButton.TextColor3 = Color3.fromRGB(205, 209, 216)
+	refreshButton.TextSize = 17
+	refreshButton.Position = UDim2.new(1, -76, 0, 0)
+	refreshButton.Size = UDim2.fromOffset(25, 25)
+	refreshButton.Parent = explorerHeader
+
+	local collapseButton = Instance.new("TextButton")
+	collapseButton.Name = "CollapseAll"
+	collapseButton.AutoButtonColor = true
+	collapseButton.BackgroundTransparency = 1
+	collapseButton.BorderSizePixel = 0
+	collapseButton.Font = Enum.Font.SourceSans
+	collapseButton.Text = "−"
+	collapseButton.TextColor3 = Color3.fromRGB(205, 209, 216)
+	collapseButton.TextSize = 18
+	collapseButton.Position = UDim2.new(1, -51, 0, 0)
+	collapseButton.Size = UDim2.fromOffset(25, 25)
+	collapseButton.Parent = explorerHeader
 
 	local close = Instance.new("TextButton")
 	close.Name = "Close"
+	close.AutoButtonColor = true
 	close.BackgroundTransparency = 1
 	close.BorderSizePixel = 0
-	close.Font = Enum.Font.Code
+	close.Font = Enum.Font.SourceSans
 	close.Text = "×"
-	close.TextColor3 = Color3.fromRGB(220, 224, 230)
-	close.TextSize = 22
-	close.Size = UDim2.fromOffset(36, 32)
-	close.Position = UDim2.new(1, -36, 0, 0)
-	close.Parent = titleBar
+	close.TextColor3 = Color3.fromRGB(205, 209, 216)
+	close.TextSize = 17
+	close.Position = UDim2.new(1, -26, 0, 0)
+	close.Size = UDim2.fromOffset(26, 25)
+	close.Parent = explorerHeader
 
 	local searchBox = Instance.new("TextBox")
 	searchBox.Name = "Search"
-	searchBox.PlaceholderText = "Search name or class... (Enter to reveal)"
+	searchBox.PlaceholderText = "Search"
 	searchBox.ClearTextOnFocus = false
-	searchBox.Font = Enum.Font.Code
+	searchBox.Font = Enum.Font.SourceSans
 	searchBox.Text = ""
-	searchBox.TextColor3 = Color3.fromRGB(225, 228, 234)
-	searchBox.PlaceholderColor3 = Color3.fromRGB(125, 133, 145)
+	searchBox.TextColor3 = Color3.fromRGB(226, 229, 234)
+	searchBox.PlaceholderColor3 = Color3.fromRGB(137, 143, 153)
 	searchBox.TextSize = 14
 	searchBox.TextXAlignment = Enum.TextXAlignment.Left
-	searchBox.BackgroundColor3 = Color3.fromRGB(21, 24, 29)
-	searchBox.BorderColor3 = Color3.fromRGB(66, 72, 82)
-	searchBox.Size = UDim2.new(0.58, -12, 0, 30)
-	searchBox.Position = UDim2.fromOffset(8, 40)
-	searchBox.Parent = main
+	searchBox.BackgroundColor3 = Color3.fromRGB(41, 44, 50)
+	searchBox.BorderColor3 = Color3.fromRGB(64, 68, 76)
+	searchBox.Position = UDim2.fromOffset(7, 31)
+	searchBox.Size = UDim2.new(1, -14, 0, 26)
+	searchBox.Parent = explorerPane
 
 	local treeScroll = Instance.new("ScrollingFrame")
 	treeScroll.Name = "Tree"
-	treeScroll.BackgroundColor3 = Color3.fromRGB(22, 25, 30)
-	treeScroll.BorderColor3 = Color3.fromRGB(60, 66, 76)
-	treeScroll.ScrollBarThickness = 8
+	treeScroll.BackgroundColor3 = Color3.fromRGB(30, 32, 37)
+	treeScroll.BorderSizePixel = 0
+	treeScroll.ScrollBarImageColor3 = Color3.fromRGB(104, 108, 117)
+	treeScroll.ScrollBarThickness = 7
 	treeScroll.ScrollingDirection = Enum.ScrollingDirection.Y
 	treeScroll.CanvasSize = UDim2.fromOffset(0, 0)
-	treeScroll.Size = UDim2.new(0.58, -12, 1, -112)
-	treeScroll.Position = UDim2.fromOffset(8, 78)
-	treeScroll.Parent = main
+	treeScroll.Position = UDim2.fromOffset(4, 61)
+	treeScroll.Size = UDim2.new(1, -8, 1, -82)
+	treeScroll.Parent = explorerPane
 
-	local properties = Instance.new("Frame")
-	properties.Name = "Properties"
-	properties.BackgroundColor3 = Color3.fromRGB(22, 25, 30)
-	properties.BorderColor3 = Color3.fromRGB(60, 66, 76)
-	properties.Size = UDim2.new(0.42, -12, 1, -80)
-	properties.Position = UDim2.new(0.58, 4, 0, 40)
-	properties.Parent = main
+	local status = createLabel(
+		explorerPane,
+		"Initializing...",
+		UDim2.new(1, -12, 0, 19),
+		UDim2.new(0, 7, 1, -20)
+	)
+	status.TextColor3 = Color3.fromRGB(128, 136, 148)
+	status.TextSize = 11
 
-	local propertyHeader =
-		createLabel(properties, "Properties", UDim2.new(1, -16, 0, 26), UDim2.fromOffset(8, 0))
-	propertyHeader.Font = Enum.Font.Code
-	propertyHeader.TextColor3 = Color3.fromRGB(235, 238, 243)
+	local divider = Instance.new("Frame")
+	divider.Name = "PaneDivider"
+	divider.Active = true
+	divider.BackgroundColor3 = Color3.fromRGB(67, 71, 79)
+	divider.BorderSizePixel = 0
+	divider.Position = UDim2.new(0, 0, DEFAULT_PANE_SPLIT, -2)
+	divider.Size = UDim2.new(1, 0, 0, 5)
+	divider.ZIndex = 15
+	divider.Parent = main
+
+	local propertiesPane = Instance.new("Frame")
+	propertiesPane.Name = "PropertiesPane"
+	propertiesPane.BackgroundColor3 = Color3.fromRGB(30, 32, 37)
+	propertiesPane.BorderSizePixel = 0
+	propertiesPane.Position = UDim2.new(0, 0, DEFAULT_PANE_SPLIT, 3)
+	propertiesPane.Size = UDim2.new(1, 0, 1 - DEFAULT_PANE_SPLIT, -3)
+	propertiesPane.ClipsDescendants = true
+	propertiesPane.Parent = main
+
+	local propertiesHeader = Instance.new("Frame")
+	propertiesHeader.Name = "Header"
+	propertiesHeader.BackgroundColor3 = Color3.fromRGB(37, 40, 46)
+	propertiesHeader.BorderSizePixel = 0
+	propertiesHeader.Size = UDim2.new(1, 0, 0, 25)
+	propertiesHeader.Parent = propertiesPane
+
+	local propertyHeader = createLabel(
+		propertiesHeader,
+		"Properties",
+		UDim2.new(1, -16, 1, 0),
+		UDim2.fromOffset(8, 0)
+	)
+	propertyHeader.TextColor3 = Color3.fromRGB(226, 229, 234)
+	propertyHeader.TextSize = 14
 
 	local propertySearchBox = Instance.new("TextBox")
 	propertySearchBox.Name = "PropertySearch"
-	propertySearchBox.PlaceholderText = "Filter properties..."
+	propertySearchBox.PlaceholderText = "Filter Properties"
 	propertySearchBox.ClearTextOnFocus = false
-	propertySearchBox.Font = Enum.Font.Code
+	propertySearchBox.Font = Enum.Font.SourceSans
 	propertySearchBox.Text = ""
 	propertySearchBox.TextColor3 = Color3.fromRGB(225, 228, 234)
-	propertySearchBox.PlaceholderColor3 = Color3.fromRGB(125, 133, 145)
+	propertySearchBox.PlaceholderColor3 = Color3.fromRGB(137, 143, 153)
 	propertySearchBox.TextSize = 13
 	propertySearchBox.TextXAlignment = Enum.TextXAlignment.Left
-	propertySearchBox.BackgroundColor3 = Color3.fromRGB(21, 24, 29)
-	propertySearchBox.BorderColor3 = Color3.fromRGB(66, 72, 82)
-	propertySearchBox.Position = UDim2.fromOffset(8, 29)
-	propertySearchBox.Size = UDim2.new(1, -16, 0, 27)
-	propertySearchBox.Parent = properties
+	propertySearchBox.BackgroundColor3 = Color3.fromRGB(41, 44, 50)
+	propertySearchBox.BorderColor3 = Color3.fromRGB(64, 68, 76)
+	propertySearchBox.Position = UDim2.fromOffset(7, 31)
+	propertySearchBox.Size = UDim2.new(1, -14, 0, 26)
+	propertySearchBox.Parent = propertiesPane
 
 	local propertyContent = Instance.new("ScrollingFrame")
 	propertyContent.Name = "PropertyContent"
-	propertyContent.BackgroundTransparency = 1
+	propertyContent.BackgroundColor3 = Color3.fromRGB(30, 32, 37)
 	propertyContent.BorderSizePixel = 0
-	propertyContent.ScrollBarThickness = 6
+	propertyContent.ScrollBarImageColor3 = Color3.fromRGB(104, 108, 117)
+	propertyContent.ScrollBarThickness = 7
 	propertyContent.ScrollingDirection = Enum.ScrollingDirection.Y
 	propertyContent.CanvasSize = UDim2.fromOffset(0, 0)
-	propertyContent.Position = UDim2.fromOffset(0, 60)
-	propertyContent.Size = UDim2.new(1, 0, 1, -60)
-	propertyContent.Parent = properties
-
-	local status =
-		createLabel(main, "Initializing...", UDim2.new(0.58, -12, 0, 24), UDim2.new(0, 8, 1, -28))
-	status.TextColor3 = Color3.fromRGB(145, 154, 168)
-	status.TextSize = 12
-
-	local resizeGrip = Instance.new("TextButton")
-	resizeGrip.Name = "ResizeGrip"
-	resizeGrip.Active = true
-	resizeGrip.AutoButtonColor = false
-	resizeGrip.BackgroundTransparency = 1
-	resizeGrip.BorderSizePixel = 0
-	resizeGrip.Font = Enum.Font.Code
-	resizeGrip.Text = "◢"
-	resizeGrip.TextColor3 = Color3.fromRGB(125, 134, 148)
-	resizeGrip.TextSize = 15
-	resizeGrip.AnchorPoint = Vector2.new(1, 1)
-	resizeGrip.Position = UDim2.fromScale(1, 1)
-	resizeGrip.Size = UDim2.fromOffset(22, 22)
-	resizeGrip.ZIndex = 20
-	resizeGrip.Parent = main
+	propertyContent.Position = UDim2.fromOffset(0, 61)
+	propertyContent.Size = UDim2.new(1, 0, 1, -61)
+	propertyContent.Parent = propertiesPane
 
 	local contextDismiss = Instance.new("TextButton")
 	contextDismiss.Name = "ContextDismiss"
@@ -1168,8 +1290,8 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 
 	local contextMenu = Instance.new("Frame")
 	contextMenu.Name = "ContextMenu"
-	contextMenu.BackgroundColor3 = Color3.fromRGB(25, 28, 34)
-	contextMenu.BorderColor3 = Color3.fromRGB(76, 83, 94)
+	contextMenu.BackgroundColor3 = Color3.fromRGB(37, 40, 46)
+	contextMenu.BorderColor3 = Color3.fromRGB(78, 83, 92)
 	contextMenu.BorderSizePixel = 1
 	contextMenu.Visible = false
 	contextMenu.ZIndex = 60
@@ -1179,6 +1301,9 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 		Hierarchy = hierarchy,
 		ScreenGui = screenGui,
 		Main = main,
+		ExplorerPane = explorerPane,
+		PropertiesPane = propertiesPane,
+		Divider = divider,
 		TreeScroll = treeScroll,
 		SearchBox = searchBox,
 		Properties = propertyContent,
@@ -1201,14 +1326,24 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 		_searchGeneration = 0,
 		_statusGeneration = 0,
 		_statusOverride = nil,
+		_paneSplit = DEFAULT_PANE_SPLIT,
 		_destroyed = false,
 		_onClose = if options ~= nil then options.OnClose else nil,
 	}, ExplorerWindow)
 
 	self:_createRows()
 	self:_createContextMenu()
-	self:_enableDragging(titleBar)
-	self:_enableResizing(resizeGrip)
+	self:_enableDockWidthResize(widthGrip)
+	self:_enablePaneSplitResize(divider)
+	self:_layoutPanes()
+
+	table.insert(
+		self._connections,
+		main:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+			self:_layoutPanes()
+			self:_renderRows()
+		end)
+	)
 
 	table.insert(
 		self._connections,
@@ -1245,6 +1380,26 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 		self._connections,
 		propertySearchBox:GetPropertyChangedSignal("Text"):Connect(function()
 			self:_updateProperties()
+		end)
+	)
+
+	table.insert(
+		self._connections,
+		refreshButton.MouseButton1Click:Connect(function()
+			local id = self.SelectedId or self.Hierarchy.RootId
+			self.Hierarchy:RefreshId(id)
+			self:_rebuildVisible()
+			self:_showStatus("Explorer refreshed")
+		end)
+	)
+
+	table.insert(
+		self._connections,
+		collapseButton.MouseButton1Click:Connect(function()
+			table.clear(self.Expanded)
+			self.Expanded[self.Hierarchy.RootId] = true
+			self.TreeScroll.CanvasPosition = Vector2.zero
+			self:_rebuildVisible()
 		end)
 	)
 

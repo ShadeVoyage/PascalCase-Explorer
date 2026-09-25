@@ -4,7 +4,27 @@ PascalCase Explorer is a client-side Luau runtime explorer intended for debuggin
 
 ## Current status
 
-Phase 1 is platform-verified in Roblox. Phase 1.5 replaced per-Instance hierarchy signals with three global connections plus batched reconciliation. Phase 2 added the virtualized Explorer GUI. Phase 2.1 added navigation and context actions. Phase 2.2 adds deeper property inspection and client-side property editing.
+Phase 1 is platform-verified in Roblox. Phase 1.5 replaced per-Instance hierarchy signals with three global connections plus batched reconciliation. Phase 2 added the virtualized Explorer GUI. Phase 2.1 added navigation and context actions. Phase 2.2 added deeper property inspection and client-side property editing. Phase 2.3 redesigns the interface as a Roblox Studio-inspired right-docked Explorer and Properties shell.
+
+## Phase 2.3 Studio-style shell
+
+The floating PascalCase window has been replaced by a right-docked interface modeled after Roblox Studio's Explorer and Properties workflow.
+
+Current shell behavior:
+
+- Explorer docked to the right side of the client
+- Properties panel below Explorer
+- Draggable horizontal divider between Explorer and Properties
+- Draggable left edge to resize dock width
+- Studio-like dark panel/header/search styling
+- Explorer header with refresh, collapse-all, and close controls
+- Compact 20-pixel virtualized tree rows
+- Full-row blue selection highlight and hover feedback
+- Search field directly under the Explorer header
+- Filter Properties field directly under the Properties header
+- Existing search, reveal, context menu, property editing, attributes, and hierarchy synchronization preserved
+
+The interface is still a normal Roblox `ScreenGui`; it imitates Studio's layout but does not use Studio-only docking APIs.
 
 ## Phase 2.2 stability hotfix
 
