@@ -497,11 +497,8 @@ function ExplorerWindow._renderRows(self: Window)
 
 				local object = self.Hierarchy:GetInstance(rowData.Id)
 				local isService = object ~= nil and object.Parent == self.Hierarchy.Root
-				local icon, iconColor = iconFor(
-					node.ClassName,
-					rowData.Id == self.Hierarchy.RootId,
-					isService
-				)
+				local icon, iconColor =
+					iconFor(node.ClassName, rowData.Id == self.Hierarchy.RootId, isService)
 				rowView.Icon.Position = UDim2.fromOffset(iconX, 1)
 				rowView.Icon.Text = icon
 				rowView.Icon.TextColor3 = iconColor
