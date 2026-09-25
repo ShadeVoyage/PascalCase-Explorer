@@ -18,8 +18,11 @@ jobs:
         with:
           version: "v1.1.0"
 
+      - name: Verify generated class icon map
+        run: lune run scripts/generate_class_icons.luau src/UI/GeneratedClassIconMap.luau --check
+
       - name: Check formatting
-        run: stylua --check src tests executor
+        run: stylua --check src tests executor scripts
 
       - name: Lint
         run: selene src tests executor
@@ -35,6 +38,9 @@ jobs:
 
       - name: PropertyInspector tests
         run: lune run tests/property_inspector.luau
+
+      - name: Generated class icon map tests
+        run: lune run tests/class_icon_map.luau
 
       - name: Build executor bundles
         run: |

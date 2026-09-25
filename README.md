@@ -6,6 +6,30 @@ PascalCase Explorer is a client-side Luau runtime explorer intended for debuggin
 
 Phase 1 is platform-verified in Roblox. Phase 1.5 replaced per-Instance hierarchy signals with three global connections plus batched reconciliation. Phase 2 added the virtualized Explorer GUI. Phase 2.1 added navigation and context actions. Phase 2.2 added deeper property inspection and client-side property editing. Phase 2.3 redesigns the interface as a Roblox Studio-inspired right-docked Explorer and Properties shell.
 
+## Phase 2.6 current-metadata icon map
+
+The previous hand-maintained sprite indices have been removed. PascalCase now generates its `ClassImages.png` offsets from Roblox's current `ReflectionMetadata.xml` tracked by Roblox Client Tracker.
+
+```text
+ReflectionMetadata.xml
+        ↓
+ExplorerImageIndex
+        ↓
+GeneratedClassIconMap.luau
+        ↓
+rbxasset://textures/ClassImages.png
+```
+
+Only classes with an explicit current `ExplorerImageIndex` receive an atlas image. Unknown classes and services fall back to a neutral text glyph instead of being assigned an arbitrary sprite. This prevents incorrect images such as unrelated service icons appearing beside Workspace, GuiService, or custom/internal services.
+
+Refresh the generated map locally with:
+
+```powershell
+lune run scripts/generate_class_icons.luau
+```
+
+CI runs the generator in `--check` mode and fails if the checked-in mapping no longer matches current Roblox metadata.
+
 ## Phase 2.5 built-in icon atlas fallback
 
 The live Roblox client blocks the Studio-only class-icon call in normal execution, so PascalCase now has a second image-icon path that requires no security elevation and no executor filesystem APIs.

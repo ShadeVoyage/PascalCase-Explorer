@@ -141,7 +141,7 @@ function ClassIconProvider.Get(className: string, isRoot: boolean, isService: bo
 		return official
 	end
 
-	local legacy = LegacyClassIconAtlas.Get(className, isService)
+	local legacy = LegacyClassIconAtlas.Get(className)
 	if legacy ~= nil then
 		return {
 			Image = legacy.Image,
