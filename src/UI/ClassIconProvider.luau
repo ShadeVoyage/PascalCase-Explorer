@@ -41,11 +41,7 @@ local CLASS_FALLBACKS: { [string]: string } = {
 	ImageButton = "UI",
 }
 
-local function fallbackFor(
-	className: string,
-	isRoot: boolean,
-	isService: boolean
-): (string, Color3)
+local function fallbackFor(className: string, isRoot: boolean, isService: boolean): (string, Color3)
 	if isRoot then
 		return "G", Color3.fromRGB(242, 190, 74)
 	end
@@ -116,7 +112,11 @@ local function getOfficialIcon(className: string): IconInfo?
 	local rectOffset = icon.ImageRectOffset
 	local rectSize = icon.ImageRectSize
 
-	if type(image) ~= "string" or typeof(rectOffset) ~= "Vector2" or typeof(rectSize) ~= "Vector2" then
+	if
+		type(image) ~= "string"
+		or typeof(rectOffset) ~= "Vector2"
+		or typeof(rectSize) ~= "Vector2"
+	then
 		return nil
 	end
 
