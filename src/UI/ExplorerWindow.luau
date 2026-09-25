@@ -244,8 +244,7 @@ function ExplorerWindow._setPropertyRows(self: Window, entries: { any })
 		row:SetAttribute("PascalCasePropertyRow", true)
 		row.Parent = self.Properties
 
-		local key =
-			createLabel(row, entry.Name, UDim2.new(0.43, -8, 1, 0), UDim2.fromOffset(6, 0))
+		local key = createLabel(row, entry.Name, UDim2.new(0.43, -8, 1, 0), UDim2.fromOffset(6, 0))
 		key.TextColor3 = Color3.fromRGB(145, 156, 172)
 		key.TextSize = 13
 
@@ -958,13 +957,10 @@ function ExplorerWindow._layoutPanes(self: Window)
 	local dividerHeight = 5
 	self.ExplorerPane.Position = UDim2.fromOffset(0, 0)
 	self.ExplorerPane.Size = UDim2.new(1, 0, self._paneSplit, -math.ceil(dividerHeight / 2))
-	self.Divider.Position =
-		UDim2.new(0, 0, self._paneSplit, -math.floor(dividerHeight / 2))
+	self.Divider.Position = UDim2.new(0, 0, self._paneSplit, -math.floor(dividerHeight / 2))
 	self.Divider.Size = UDim2.new(1, 0, 0, dividerHeight)
-	self.PropertiesPane.Position =
-		UDim2.new(0, 0, self._paneSplit, math.ceil(dividerHeight / 2))
-	self.PropertiesPane.Size =
-		UDim2.new(1, 0, 1 - self._paneSplit, -math.ceil(dividerHeight / 2))
+	self.PropertiesPane.Position = UDim2.new(0, 0, self._paneSplit, math.ceil(dividerHeight / 2))
+	self.PropertiesPane.Size = UDim2.new(1, 0, 1 - self._paneSplit, -math.ceil(dividerHeight / 2))
 end
 
 function ExplorerWindow._enableDockWidthResize(self: Window, grip: GuiObject)
@@ -1002,15 +998,9 @@ function ExplorerWindow._enableDockWidthResize(self: Window, grip: GuiObject)
 
 			local camera = workspace.CurrentCamera
 			local viewportWidth = if camera ~= nil then camera.ViewportSize.X else 1920
-			local maximum = math.max(
-				MIN_DOCK_WIDTH,
-				math.min(MAX_DOCK_WIDTH, viewportWidth - 120)
-			)
-			local width = math.clamp(
-				startWidth + (dragStartX - input.Position.X),
-				MIN_DOCK_WIDTH,
-				maximum
-			)
+			local maximum = math.max(MIN_DOCK_WIDTH, math.min(MAX_DOCK_WIDTH, viewportWidth - 120))
+			local width =
+				math.clamp(startWidth + (dragStartX - input.Position.X), MIN_DOCK_WIDTH, maximum)
 
 			self.Main.Size = UDim2.new(0, width, 1, 0)
 			self:_layoutPanes()
@@ -1120,20 +1110,12 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 	explorerHeader.Parent = explorerPane
 
 	local version = if options ~= nil and options.Version ~= nil then options.Version else "dev"
-	local explorerTitle = createLabel(
-		explorerHeader,
-		"Explorer",
-		UDim2.new(1, -94, 1, 0),
-		UDim2.fromOffset(8, 0)
-	)
+	local explorerTitle =
+		createLabel(explorerHeader, "Explorer", UDim2.new(1, -94, 1, 0), UDim2.fromOffset(8, 0))
 	explorerTitle.TextSize = 14
 
-	local versionLabel = createLabel(
-		explorerHeader,
-		version,
-		UDim2.fromOffset(78, 25),
-		UDim2.new(1, -170, 0, 0)
-	)
+	local versionLabel =
+		createLabel(explorerHeader, version, UDim2.fromOffset(78, 25), UDim2.new(1, -170, 0, 0))
 	versionLabel.TextColor3 = Color3.fromRGB(132, 140, 151)
 	versionLabel.TextSize = 11
 	versionLabel.TextXAlignment = Enum.TextXAlignment.Right
@@ -1240,12 +1222,8 @@ function ExplorerWindow.new(hierarchy: any, options: Options?): Window
 	propertiesHeader.Size = UDim2.new(1, 0, 0, 25)
 	propertiesHeader.Parent = propertiesPane
 
-	local propertyHeader = createLabel(
-		propertiesHeader,
-		"Properties",
-		UDim2.new(1, -16, 1, 0),
-		UDim2.fromOffset(8, 0)
-	)
+	local propertyHeader =
+		createLabel(propertiesHeader, "Properties", UDim2.new(1, -16, 1, 0), UDim2.fromOffset(8, 0))
 	propertyHeader.TextColor3 = Color3.fromRGB(226, 229, 234)
 	propertyHeader.TextSize = 14
 
