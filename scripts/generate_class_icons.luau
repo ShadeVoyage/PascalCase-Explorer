@@ -12,17 +12,21 @@ local outputPath = process.args[1] or DEFAULT_OUTPUT
 local checkOnly = process.args[2] == "--check"
 
 local response = net.request(URL)
-assert(response.ok, string.format("Failed to download ReflectionMetadata.xml: %d", response.statusCode))
+assert(
+	response.ok,
+	string.format("Failed to download ReflectionMetadata.xml: %d", response.statusCode)
+)
 
 local indices: { [string]: number } = {}
 
-for properties in string.gmatch(
-	response.body,
-	'<Item class="ReflectionMetadataClass">%s*<Properties>(.-)</Properties>'
-) do
+for properties in
+	string.gmatch(
+		response.body,
+		'<Item class="ReflectionMetadataClass">%s*<Properties>(.-)</Properties>'
+	)
+do
 	local name = string.match(properties, '<string name="Name">([^<]+)</string>')
-	local indexText =
-		string.match(properties, '<string name="ExplorerImageIndex">(-?%d+)</string>')
+	local indexText = string.match(properties, '<string name="ExplorerImageIndex">(-?%d+)</string>')
 
 	if name ~= nil and indexText ~= nil then
 		local index = tonumber(indexText)
