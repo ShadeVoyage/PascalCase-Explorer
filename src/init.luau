@@ -7,6 +7,7 @@ local LiveHierarchy = require("@self/Runtime/LiveHierarchy")
 local PropertyInspector = require("@self/Runtime/PropertyInspector")
 local ExplorerWindow = require("@self/UI/ExplorerWindow")
 local ClassIconProvider = require("@self/UI/ClassIconProvider")
+local LegacyClassIconAtlas = require("@self/UI/LegacyClassIconAtlas")
 
 local PascalCaseExplorer = {}
 
@@ -18,6 +19,7 @@ PascalCaseExplorer.LiveHierarchy = LiveHierarchy
 PascalCaseExplorer.PropertyInspector = PropertyInspector
 PascalCaseExplorer.ExplorerWindow = ExplorerWindow
 PascalCaseExplorer.ClassIconProvider = ClassIconProvider
+PascalCaseExplorer.LegacyClassIconAtlas = LegacyClassIconAtlas
 
 function PascalCaseExplorer.getInfo(): string
 	return string.format("%s %s", PascalCaseExplorer.Name, PascalCaseExplorer.Version)

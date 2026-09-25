@@ -1,5 +1,7 @@
 --!strict
 
+local LegacyClassIconAtlas = require("./LegacyClassIconAtlas")
+
 export type IconInfo = {
 	Image: string?,
 	ImageRectOffset: Vector2?,
@@ -137,6 +139,18 @@ function ClassIconProvider.Get(className: string, isRoot: boolean, isService: bo
 	local official = getOfficialIcon(className)
 	if official ~= nil then
 		return official
+	end
+
+	local legacy = LegacyClassIconAtlas.Get(className, isService)
+	if legacy ~= nil then
+		return {
+			Image = legacy.Image,
+			ImageRectOffset = legacy.ImageRectOffset,
+			ImageRectSize = legacy.ImageRectSize,
+			FallbackText = "",
+			FallbackColor = Color3.new(1, 1, 1),
+			Official = false,
+		}
 	end
 
 	local fallbackText, fallbackColor = fallbackFor(className, isRoot, isService)

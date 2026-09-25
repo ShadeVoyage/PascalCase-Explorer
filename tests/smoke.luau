@@ -18,6 +18,7 @@ assert(
 )
 assert(type(Explorer.ExplorerWindow) == "table", "ExplorerWindow must be exported")
 assert(type(Explorer.ClassIconProvider) == "table", "ClassIconProvider must be exported")
+assert(type(Explorer.LegacyClassIconAtlas) == "table", "LegacyClassIconAtlas must be exported")
 assert(type(Explorer.ExplorerWindow.new) == "function", "ExplorerWindow.new must be available")
 
 print("Smoke test passed:", info)
